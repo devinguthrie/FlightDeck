@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+vscode-extension/node_modules/
+
+# Build outputs
+.next/
+vscode-extension/out/
+vscode-extension/*.vsix
+
+# Local data (may contain personal transcript/usage info)
+.ai-usage/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# gstack security reports (contain attack surface details)
+.gstack/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo

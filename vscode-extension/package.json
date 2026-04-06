@@ -1,0 +1,53 @@
+{
+  "name": "copilot-telemetry-collector",
+  "displayName": "FlightDeck Telemetry",
+  "description": "Polls GitHub Copilot quota API and logs snapshots for FlightDeck",
+  "version": "1.0.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copilotTelemetry.refreshNow",
+        "title": "Copilot Telemetry: Refresh Now"
+      },
+      {
+        "command": "copilotTelemetry.showLog",
+        "title": "Copilot Telemetry: Show Snapshot Log"
+      }
+    ],
+    "configuration": {
+      "title": "FlightDeck Telemetry",
+      "properties": {
+        "copilotTelemetry.pollIntervalMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "How often (in minutes) to poll the GitHub Copilot quota API"
+        },
+        "copilotTelemetry.dashboardPort": {
+          "type": "number",
+          "default": 3000,
+          "description": "Port of the FlightDeck server for live push (0 to disable)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "tsc -p ./",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.4.0"
+  }
+}

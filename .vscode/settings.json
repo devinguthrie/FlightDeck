@@ -1,0 +1,14 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "Get-Member": true,
+        "ConvertTo-Json": true,
+        "Group-Object": true,
+        "ForEach-Object": true,
+        "npm install": true,
+        "npx tsc": true,
+        "/^node node_modules/@vscode/vsce/vsce package --no-dependencies --allow-missing-repository$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
