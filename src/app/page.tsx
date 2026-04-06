@@ -24,6 +24,7 @@ interface DailyBucket {
   requests: number;
   sessions: number;
   toolCalls: number;
+  skills: string[];
 }
 
 interface IntradayBucket {
@@ -474,20 +475,20 @@ export default function Dashboard() {
 
         <RoiExplorationPanel
           dailyBuckets={stats.dailyBuckets}
-          intradayBuckets={stats.intradayBuckets}
           quotaTimeSeries={quota?.timeSeries ?? []}
+          intradayBuckets={stats.intradayBuckets}
           cycleUserTurns={stats.cycleUserTurns}
           cycleAssistantTurns={stats.cycleAssistantTurns}
           cycleToolCalls={stats.cycleToolCalls}
           cycleDurationMinutes={stats.cycleDurationMinutes}
           premiumBurnPerUserPrompt={stats.premiumBurnPerUserPrompt}
-          requestDensityPerMinute={stats.requestDensityPerMinute}
           toolOverheadRatio={stats.toolOverheadRatio}
           promptEfficiencyPer100Turns={stats.promptEfficiencyPer100Turns}
           qualityToolOverheadCorrelation={stats.qualityToolOverheadCorrelation}
           marginalQualityCurve={stats.marginalQualityCurve}
           quotaAgeMinutes={quota?.ageMinutes ?? null}
           totalRated={stats.totalRated}
+          skillStats={stats.skillStats}
         />
 
         {/* Charts */}

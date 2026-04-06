@@ -58,12 +58,12 @@ export function daysRemaining(
 
 /**
  * Given a billing cycle start day, return the start ISO datetime of the current billing cycle.
+ * Pass `today` to pin the reference date (useful for tests).
  */
-export function currentCycleStart(startDay: number): Date {
-  const now = new Date();
-  const candidate = new Date(now.getFullYear(), now.getMonth(), startDay, 0, 0, 0);
+export function currentCycleStart(startDay: number, today: Date = new Date()): Date {
+  const candidate = new Date(today.getFullYear(), today.getMonth(), startDay, 0, 0, 0);
   // If today is before the start day, the cycle started last month
-  if (candidate > now) {
+  if (candidate > today) {
     candidate.setMonth(candidate.getMonth() - 1);
   }
   return candidate;
@@ -71,9 +71,10 @@ export function currentCycleStart(startDay: number): Date {
 
 /**
  * Given a billing cycle start day, return the end ISO datetime of the current billing cycle.
+ * Pass `today` to pin the reference date (useful for tests).
  */
-export function currentCycleEnd(startDay: number): Date {
-  const start = currentCycleStart(startDay);
+export function currentCycleEnd(startDay: number, today: Date = new Date()): Date {
+  const start = currentCycleStart(startDay, today);
   const end = new Date(start);
   end.setMonth(end.getMonth() + 1);
   return end;

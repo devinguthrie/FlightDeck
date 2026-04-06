@@ -137,12 +137,12 @@ export default function ProjectionChart({
 
       {exhaustionDate && exhaustionDate <= points[points.length - 1]?.date ? (
         <p className="text-xs text-amber-600 font-medium mb-3">
-          ⚠ At {dailyBurnRate}/day pace, quota exhausted on{" "}
+          ⚠ At {dailyBurnRate.toFixed(1)}/day pace, quota exhausted on{" "}
           {fmtDate(exhaustionDate)}
         </p>
       ) : (
         <p className="text-xs text-green-600 font-medium mb-3">
-          ✓ On track — {dailyBurnRate}/day burn rate, quota lasts through cycle
+          ✓ On track — {dailyBurnRate.toFixed(1)}/day burn rate, quota lasts through cycle
         </p>
       )}
 

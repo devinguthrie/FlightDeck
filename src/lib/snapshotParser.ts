@@ -54,14 +54,9 @@ const TELEMETRY_DIR = path.join(
 );
 const SNAPSHOTS_FILE = path.join(TELEMETRY_DIR, "snapshots.jsonl");
 
-// ─── Parser ──────────────────────────────────────────────────────────────────
+// ─── Pure parser (accepts raw JSONL text — testable without the filesystem) ──
 
-export function parseSnapshots(): QuotaSummary {
-  if (!existsSync(SNAPSHOTS_FILE)) {
-    return makeEmpty();
-  }
-
-  const raw = readFileSync(SNAPSHOTS_FILE, "utf-8");
+export function parseSnapshotsFromText(raw: string): QuotaSummary {
   const lines = raw.split("\n").filter((l) => l.trim());
 
   if (lines.length === 0) {
@@ -112,6 +107,17 @@ export function parseSnapshots(): QuotaSummary {
     copilotPlan: latest.copilot_plan || null,
     timeSeries,
   };
+}
+
+// ─── File-backed parser ───────────────────────────────────────────────────────
+
+export function parseSnapshots(): QuotaSummary {
+  if (!existsSync(SNAPSHOTS_FILE)) {
+    return makeEmpty();
+  }
+
+  const raw = readFileSync(SNAPSHOTS_FILE, "utf-8");
+  return parseSnapshotsFromText(raw);
 }
 
 function makeEmpty(): QuotaSummary {
