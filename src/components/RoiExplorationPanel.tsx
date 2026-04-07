@@ -361,18 +361,17 @@ export default function RoiExplorationPanel({
   // ─── Hourly turns/premium trend (for sub-day windows) ─────────────────────
   const hourlyTrend = useMemo(() => {
     const premiumByHour = buildPremiumHourlyDeltas(quotaTimeSeries);
-    const allKeys = new Set([
-      ...Object.keys(premiumByHour),
-      ...intradayBuckets.map((b) => b.hour),
-    ]);
-    return Array.from(allKeys)
-      .sort()
-      .map((key) => {
-        const turns = intradayBuckets.find((b) => b.hour === key)?.transcriptTurns ?? 0;
-        const billedPremium = premiumByHour[key] ?? null;
-        const turnsPerPremium = billedPremium && billedPremium > 0 ? turns / billedPremium : null;
-        return { hour: key, label: fmtHourLabel(key), transcriptTurns: turns, billedPremium, turnsPerPremium };
-      });
+    return intradayBuckets.map((bucket) => {
+      const billedPremium = premiumByHour[bucket.hour] ?? null;
+      const turnsPerPremium =
+        billedPremium && billedPremium > 0 ? bucket.transcriptTurns / billedPremium : null;
+      return {
+        ...bucket,
+        label: fmtHourLabel(bucket.hour),
+        billedPremium,
+        turnsPerPremium,
+      };
+    });
   }, [quotaTimeSeries, intradayBuckets]);
 
   const hourlyTrendSlice = useMemo(() => {
@@ -689,8 +688,8 @@ export default function RoiExplorationPanel({
             </div>
           </div>
           {windowToDays(trendWindow) === null ? (
-            /* Sub-day mode: hourly turns/premium from transcript + quota join */
-            hourlyTrendSlice.length < 2 ? (
+            /* Sub-day mode: transcript-driven hourly turns/premium */
+            hourlyTrendSlice.length === 0 ? (
               <p className="text-xs text-gray-400 py-8 text-center">
                 No hourly data in the last {trendWindow}
               </p>
@@ -698,25 +697,20 @@ export default function RoiExplorationPanel({
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={hourlyTrendSlice} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                   <Tooltip
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
                     formatter={(value: unknown, name: string) => {
                       if (value === null || value === undefined) return ["-", name];
                       const num = Number(value);
-                      const lbl =
-                        name === "turnsPerPremium" ? "Turns/Premium (hourly)"
-                        : name === "transcriptTurns" ? "Transcript Turns"
-                        : name === "billedPremium" ? "Billed Premium"
-                        : name;
-                      return [Number.isFinite(num) ? num.toFixed(2) : "-", lbl];
+                      return [Number.isFinite(num) ? num.toFixed(2) : "-", name];
                     }}
                   />
-                  <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => v === "turnsPerPremium" ? "Turns/Premium (hourly)" : v === "transcriptTurns" ? "Transcript Turns" : v === "billedPremium" ? "Billed Premium" : v} />
-                  <Line type="monotone" dataKey="transcriptTurns" stroke="#3b82f6" strokeWidth={1.5} dot={false} connectNulls={false} strokeDasharray="4 2" />
-                  <Line type="monotone" dataKey="billedPremium" stroke="#10b981" strokeWidth={1.5} dot={false} connectNulls={false} strokeDasharray="4 2" />
-                  <Line type="monotone" dataKey="turnsPerPremium" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls={false} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="transcriptTurns" name="Transcript Turns" stroke="#3b82f6" strokeWidth={2} dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="billedPremium" name="Billed Premium" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="turnsPerPremium" name="Turns per Premium" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls={false} />
                 </LineChart>
               </ResponsiveContainer>
             )
@@ -784,7 +778,7 @@ export default function RoiExplorationPanel({
           )}
           <p className="text-[11px] text-gray-400 mt-1">
             {windowToDays(trendWindow) === null
-              ? "Purple = turns/premium per hour · blue/green = raw components"
+              ? "Purple = turns/premium · blue = transcript turns · green = billed premium (hourly)"
               : "Purple solid = turns/premium · dashed = 7d MA · blue/green = raw components"}
           </p>
         </div>
