@@ -63,55 +63,6 @@ Open `http://localhost:3000`.
 
 Transcript data is read automatically. For billed quota data, install the VS Code extension (see below).
 
-## Header Status Pills
-
-The header shows live status for all three data pipelines:
-
-- **VS Code Ext** — green when a quota snapshot arrived within the last 30 minutes
-- **Proxy** — green when the MITM proxy log has recent CLI captures
-- **Copilot CLI** — blue when the CLI tool is detected
-
-## Key Metrics
-
-### KPI Cards
-
-| Card | What it measures |
-|------|-----------------|
-| Premium Used This Cycle | Billed `premiumUsed` from quota snapshots vs. your plan limit |
-| 7-Day Rolling Requests | Delta from quota time series over the last 7 days (billed, not estimated) |
-| Sessions / Avg Quality | Session count from transcripts + average of your manual quality ratings |
-| Avg Context Depth | Estimated % of the 128k context window used per session |
-| CLI vs VS Code Usage | Request split between CLI proxy captures and VS Code transcript sessions, with token volumes. Note: VS Code token counts are transcript heuristic estimates — system prompts and file context are not captured, so VS Code tokens are likely undercounted. |
-
-### Quota Consumption
-
-Live chart of billed `premiumUsed` over time, pulled directly from the GitHub Copilot quota API via the extension. Supports 24h / 7d / 30d / cycle / all time windows and raw / hourly / daily granularity.
-
-**Plan upgrade detection:** if `premiumUsed` drops by more than 30 units and 40% between two snapshots, FlightDeck recognises a quota reset (GitHub resets the counter on plan upgrades) and slices the time series to post-reset only. Burn rate, projections, and 7-day rolling counts all use post-reset data automatically.
-
-### Premium Usage Projection
-
-Projects quota exhaustion based on recent burn rate. Burn rate is computed from the rolling window of post-reset snapshots. When there is less than one day of post-reset coverage, falls back to a cycle-average calculation.
-
-### Premium Efficiency Trend
-
-Transcript turns divided by billed premium units per time window. Higher = more output per billed request. The 7-day moving average smooths day-to-day noise. Use this to spot whether workflow changes (new skills, different tools, longer sessions) are moving efficiency up or down.
-
-### ROI Exploration Panel
-
-- Turns/premium, work depth per turn, prompt efficiency, quota trust score
-- Session depth vs efficiency scatter (bucketed by req/session)
-- Top skills by quality efficiency (requires rated sessions)
-- Skill impact table — avg requests and quality per skill
-
-### Proxy Capture
-
-The MITM proxy intercepts CLI API traffic for exact token counts and model latency. Shows model breakdown with request count, % of total, and avg latency. VS Code chat uses its own internal OAuth flow and does not go through the proxy — VS Code activity is tracked via transcripts instead.
-
-### Sessions List
-
-All parsed transcript sessions with: workspace name, request count, tool call count, estimated tokens, duration, detected skills, and quality rating (1–5, click to rate).
-
 ## Extension Setup
 
 The VS Code extension polls the GitHub Copilot quota API and writes snapshots locally.
@@ -167,6 +118,56 @@ This starts `mitmdump` in the background and sets `HTTPS_PROXY` at the Windows U
 - **Proxy Capture panel** — per-model request counts and avg latency
 
 See [docs/proxy-setup.md](docs/proxy-setup.md) for full setup, troubleshooting, and uninstall instructions.
+
+## Header Status Pills
+
+The header shows live status for all three data pipelines:
+
+- **VS Code Ext** — green when a quota snapshot arrived within the last 30 minutes
+- **Proxy** — green when the MITM proxy log has recent CLI captures
+- **Copilot CLI** — blue when the CLI tool is detected
+
+## Key Metrics
+
+### KPI Cards
+
+| Card | What it measures |
+|------|-----------------|
+| Premium Used This Cycle | Billed `premiumUsed` from quota snapshots vs. your plan limit |
+| 7-Day Rolling Requests | Delta from quota time series over the last 7 days (billed, not estimated) |
+| Sessions / Avg Quality | Session count from transcripts + average of your manual quality ratings |
+| Avg Context Depth | Estimated % of the 128k context window used per session |
+| CLI vs VS Code Usage | Request split between CLI proxy captures and VS Code transcript sessions, with token volumes. Note: VS Code token counts are transcript heuristic estimates — system prompts and file context are not captured, so VS Code tokens are likely undercounted. |
+
+### Quota Consumption
+
+Live chart of billed `premiumUsed` over time, pulled directly from the GitHub Copilot quota API via the extension. Supports 24h / 7d / 30d / cycle / all time windows and raw / hourly / daily granularity.
+
+**Plan upgrade detection:** if `premiumUsed` drops by more than 30 units and 40% between two snapshots, FlightDeck recognises a quota reset (GitHub resets the counter on plan upgrades) and slices the time series to post-reset only. Burn rate, projections, and 7-day rolling counts all use post-reset data automatically.
+
+### Premium Usage Projection
+
+Projects quota exhaustion based on recent burn rate. Burn rate is computed from the rolling window of post-reset snapshots. When there is less than one day of post-reset coverage, falls back to a cycle-average calculation.
+
+### Premium Efficiency Trend
+
+Transcript turns divided by billed premium units per time window. Higher = more output per billed request. The 7-day moving average smooths day-to-day noise. Use this to spot whether workflow changes (new skills, different tools, longer sessions) are moving efficiency up or down.
+
+### ROI Exploration Panel
+
+- Turns/premium, work depth per turn, prompt efficiency, quota trust score
+- Session depth vs efficiency scatter (bucketed by req/session)
+- Top skills by quality efficiency (requires rated sessions)
+- Skill impact table — avg requests and quality per skill
+
+### Proxy Capture
+
+The MITM proxy intercepts CLI API traffic for exact token counts and model latency. Shows model breakdown with request count, % of total, and avg latency. VS Code chat uses its own internal OAuth flow and does not go through the proxy — VS Code activity is tracked via transcripts instead.
+
+### Sessions List
+
+All parsed transcript sessions with: workspace name, request count, tool call count, estimated tokens, duration, detected skills, and quality rating (1–5, click to rate).
+
 
 ## Repo Layout
 
