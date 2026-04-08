@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { parseAllSessions } from "@/lib/transcriptParser";
-import { getAllRatings } from "@/lib/storage";
+import { getAllSessionsFromDb, getAllRatingsFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET() {
   try {
-    const sessions = parseAllSessions();
-    const ratings = getAllRatings();
+    const sessions = getAllSessionsFromDb();
+    const ratings = getAllRatingsFromDb();
 
     const enriched = sessions.map((s) => ({
       ...s,

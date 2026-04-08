@@ -7,6 +7,7 @@
 
 import type { ParsedSession, IntradayActivityBucket } from "./transcriptParser";
 import type { QualityRating, Config } from "./storage";
+import type { ProxyRequest } from "./proxyRequestParser"
 import { PLANS, currentCycleStart, currentCycleEnd, daysRemaining } from "./pricing";
 
 // ─── Response types ───────────────────────────────────────────────────────────
@@ -24,6 +25,14 @@ export interface ToolCount {
   count: number;
 }
 
+export interface ToolLatency {
+  name: string;
+  count: number;
+  avgMs: number;
+  p50Ms: number;
+  p95Ms: number;
+}
+
 export interface SkillStats {
   name: string;
   sessions: number;
@@ -32,6 +41,28 @@ export interface SkillStats {
   sampleSize: number;
   qualityPer100Req: number | null;
   liftVsBaseline: number | null;
+}
+
+export interface ProxyStats {
+  totalRequests: number;
+  cliRequests: number;
+  vscodeRequests: number;
+  /** True if any proxy record was captured in the last 24 hours. */
+  proxyActive: boolean;
+  /** True if any CLI-sourced record was captured in the last 24 hours. */
+  cliActive: boolean;
+  lastCapturedAt: string | null;
+  modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number }>;
+  /**
+   * Token accuracy: exact proxy tokens vs transcript-estimated tokens for the
+   * current billing cycle. Null until both proxy and transcript data exist.
+   */
+  tokenAccuracy: {
+    exactTotalTokens: number;
+    estimatedTotalTokens: number;
+    /** exact / estimated — 1.0 = perfect match, <1 = overestimate, >1 = underestimate */
+    accuracyRatio: number;
+  } | null;
 }
 
 export interface MarginalQualityBucket {
@@ -70,6 +101,7 @@ export interface StatsResponse {
   intradayBuckets: IntradayActivityBucket[];
   projectionPoints: Array<{ date: string; actual: number | null; projected: number | null }>;
   topTools: ToolCount[];
+  toolLatencies: ToolLatency[];
   skillStats: SkillStats[];
   marginalQualityCurve: MarginalQualityBucket[];
 
@@ -78,6 +110,16 @@ export interface StatsResponse {
   totalRequests: number;
   totalRated: number;
   avgQuality: number | null;
+
+  // Rolling 7-day window (independent of billing cycle)
+  sevenDayRequests: number;
+  sevenDayBurnRate: number;
+
+  // Context saturation
+  avgContextSaturation: number | null;
+
+  // MITM proxy data
+  proxyStats: ProxyStats;
 }
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
@@ -98,6 +140,14 @@ export function addDays(d: Date, n: number): Date {
 export function mean(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/** Returns the p-th percentile (0–100) of a sorted or unsorted number array. */
+export function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
 }
 
 export function pearsonCorrelation(x: number[], y: number[]): number | null {
@@ -131,7 +181,8 @@ export function computeStats(
   ratings: Record<string, QualityRating>,
   config: Config,
   today: Date,
-  avgDays: number
+  avgDays: number,
+  proxyRequests: ProxyRequest[] = []
 ): StatsResponse {
   const plan = PLANS[config.plan];
   const cycleStart = currentCycleStart(config.billingCycleStartDay, today);
@@ -258,6 +309,91 @@ export function computeStats(
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 15);
+
+  // ─── Tool latency (P50/P95 across all sessions) ───────────────────────────────
+  const latencyAccum: Record<string, number[]> = {};
+  for (const s of sessions) {
+    for (const [name, latencies] of Object.entries(s.toolLatencyMs ?? {})) {
+      if (!latencyAccum[name]) latencyAccum[name] = [];
+      for (const ms of latencies) latencyAccum[name].push(ms);
+    }
+  }
+  const toolLatencies: ToolLatency[] = Object.entries(latencyAccum)
+    .filter(([, vals]) => vals.length > 0)
+    .map(([name, vals]) => ({
+      name,
+      count: vals.length,
+      avgMs: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+      p50Ms: Math.round(percentile(vals, 50)),
+      p95Ms: Math.round(percentile(vals, 95)),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  // ─── Rolling 7-day window ─────────────────────────────────────────────────────
+  const sevenDaysAgo = addDays(today, -7);
+  const sevenDaySessions = sessions.filter(
+    (s) => new Date(s.startedAt) >= sevenDaysAgo && new Date(s.startedAt) <= today
+  );
+  const sevenDayRequests = sevenDaySessions.reduce((sum, s) => sum + s.premiumRequests, 0);
+  const sevenDayBurnRate = Math.round((sevenDayRequests / 7) * 10) / 10;
+
+  // ─── Average context saturation ──────────────────────────────────────────────
+  const saturations = sessions
+    .map((s) => s.contextSaturation ?? 0)
+    .filter((v) => v > 0);
+  const avgContextSaturation =
+    saturations.length > 0
+      ? Math.round((saturations.reduce((a, b) => a + b, 0) / saturations.length) * 1000) / 1000
+      : null;
+
+  // ─── Proxy stats ────────────────────────────────────────────────────────────
+  const oneDayAgo = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const proxyActive = proxyRequests.some((r) => new Date(r.ts) >= oneDayAgo);
+  const cliActive = proxyRequests.some((r) => r.source === "cli" && new Date(r.ts) >= oneDayAgo);
+  const lastCapturedAt =
+    proxyRequests.length > 0 ? proxyRequests[proxyRequests.length - 1].ts : null;
+  const cliRequests = proxyRequests.filter((r) => r.source === "cli").length;
+  const vscodeRequests = proxyRequests.filter((r) => r.source === "vscode").length;
+
+  const modelMap: Record<string, { count: number; totalLatency: number }> = {};
+  for (const r of proxyRequests) {
+    if (!modelMap[r.model]) modelMap[r.model] = { count: 0, totalLatency: 0 };
+    modelMap[r.model].count++;
+    modelMap[r.model].totalLatency += r.latencyMs;
+  }
+  const modelBreakdown = Object.entries(modelMap)
+    .map(([model, data]) => ({
+      model,
+      count: data.count,
+      avgLatencyMs: Math.round(data.totalLatency / data.count),
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // Token accuracy: compare exact proxy tokens vs transcript estimates for cycle sessions
+  const proxyCycleRequests = proxyRequests.filter((r) => new Date(r.ts) >= cycleStart);
+  const exactTotal = proxyCycleRequests.reduce((sum, r) => sum + (r.totalTokens ?? 0), 0);
+  const hasExact = proxyCycleRequests.some((r) => r.totalTokens !== null);
+  const estimatedTotal = cycleSessions.reduce((sum, s) => sum + s.estimatedTotalTokens, 0);
+  const tokenAccuracy =
+    hasExact && estimatedTotal > 0
+      ? {
+          exactTotalTokens: exactTotal,
+          estimatedTotalTokens: estimatedTotal,
+          accuracyRatio: Math.round((exactTotal / estimatedTotal) * 1000) / 1000,
+        }
+      : null;
+
+  const proxyStats: ProxyStats = {
+    totalRequests: proxyRequests.length,
+    cliRequests,
+    vscodeRequests,
+    proxyActive,
+    cliActive,
+    lastCapturedAt,
+    modelBreakdown,
+    tokenAccuracy,
+  };
 
   // ─── Skill stats (ROI correlation) ───────────────────────────────────────────
   const skillMap: Record<
@@ -425,11 +561,16 @@ export function computeStats(
     intradayBuckets,
     projectionPoints,
     topTools,
+    toolLatencies,
     skillStats,
     marginalQualityCurve,
     totalSessions: sessions.length,
     totalRequests: sessions.reduce((sum, s) => sum + s.premiumRequests, 0),
     totalRated: ratedSessions.length,
     avgQuality,
+    sevenDayRequests,
+    sevenDayBurnRate,
+    avgContextSaturation,
+    proxyStats,
   };
 }

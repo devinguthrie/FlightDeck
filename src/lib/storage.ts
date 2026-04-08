@@ -2,13 +2,11 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import os from "os";
 import type { PlanKey } from "./pricing";
+import type { QualityRating } from "./db";
+import { getRatingFromDb, setRatingInDb, getAllRatingsFromDb } from "./db";
 
-export interface QualityRating {
-  quality: number; // 1–5
-  taskCompleted: "yes" | "partial" | "no";
-  note: string;
-  ratedAt: string; // ISO string
-}
+// QualityRating lives in db.ts (primary store); re-exported here for backward compat.
+export type { QualityRating } from "./db";
 
 export interface Config {
   plan: PlanKey;
@@ -19,7 +17,6 @@ export interface Config {
 
 interface DataFile {
   config: Config;
-  ratings: Record<string, QualityRating>;
 }
 
 const DATA_DIR = path.join(os.homedir(), ".ai-usage");
@@ -40,17 +37,16 @@ function ensureDir(): void {
 
 function loadRaw(): DataFile {
   if (!existsSync(DATA_FILE)) {
-    return { config: DEFAULT_CONFIG, ratings: {} };
+    return { config: DEFAULT_CONFIG };
   }
   try {
     const raw = readFileSync(DATA_FILE, "utf-8");
     const parsed = JSON.parse(raw) as Partial<DataFile>;
     return {
       config: { ...DEFAULT_CONFIG, ...(parsed.config ?? {}) },
-      ratings: parsed.ratings ?? {},
     };
   } catch {
-    return { config: DEFAULT_CONFIG, ratings: {} };
+    return { config: DEFAULT_CONFIG };
   }
 }
 
@@ -75,20 +71,16 @@ export function saveConfig(updates: Partial<Config>): Config {
 // ─── Ratings ─────────────────────────────────────────────────────────────────
 
 export function getRating(sessionId: string): QualityRating | null {
-  return loadRaw().ratings[sessionId] ?? null;
+  return getRatingFromDb(sessionId);
 }
 
 export function setRating(
   sessionId: string,
   rating: Omit<QualityRating, "ratedAt">
 ): QualityRating {
-  const data = loadRaw();
-  const full: QualityRating = { ...rating, ratedAt: new Date().toISOString() };
-  data.ratings[sessionId] = full;
-  saveRaw(data);
-  return full;
+  return setRatingInDb(sessionId, rating);
 }
 
 export function getAllRatings(): Record<string, QualityRating> {
-  return loadRaw().ratings;
+  return getAllRatingsFromDb();
 }

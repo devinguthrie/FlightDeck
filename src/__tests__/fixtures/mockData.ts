@@ -51,6 +51,8 @@ export function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSessi
     rawPath: overrides.rawPath ?? `/fake/transcripts/session-${_sessionSeq}.jsonl`,
     copilotVersion: overrides.copilotVersion ?? "1.237.0",
     vsCodeVersion: overrides.vsCodeVersion ?? "1.88.0",
+    toolLatencyMs: overrides.toolLatencyMs ?? {},
+    contextSaturation: overrides.contextSaturation ?? 0,
   };
 }
 

@@ -2,6 +2,9 @@ import { readFileSync, readdirSync, existsSync, statSync } from "fs";
 import path from "path";
 import os from "os";
 
+/** Copilot models max context window (128k tokens). Used for saturation estimate. */
+export const COPILOT_CONTEXT_LIMIT_TOKENS = 128_000;
+
 export interface ParsedSession {
   sessionId: string;
   workspaceHash: string;
@@ -13,10 +16,14 @@ export interface ParsedSession {
   assistantTurns: number;
   toolCallsTotal: number;
   toolCallsByName: Record<string, number>;
+  /** Per-tool list of execution durations in milliseconds (from start→complete events). */
+  toolLatencyMs: Record<string, number[]>;
   skillsActivated: string[];
   estimatedInputTokens: number;
   estimatedOutputTokens: number;
   estimatedTotalTokens: number;
+  /** 0–1 fraction of the model context window filled (estimated). */
+  contextSaturation: number;
   premiumRequests: number; // = assistantTurns (each turn = 1 premium model call)
   rawPath: string;
   copilotVersion: string;
@@ -109,6 +116,9 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
   let assistantTurns = 0;
   let toolCallsTotal = 0;
   const toolCallsByName: Record<string, number> = {};
+  const toolLatencyMs: Record<string, number[]> = {};
+  // Track in-flight tool executions: event id → {toolName, startMs}
+  const pendingToolStarts = new Map<string, { toolName: string; startMs: number }>();
   const skillsActivated = new Set<string>();
   let estimatedInputTokens = 0;
   let estimatedOutputTokens = 0;
@@ -149,6 +159,11 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
           (event.data as { toolName?: string }).toolName ?? "unknown";
         toolCallsByName[toolName] = (toolCallsByName[toolName] ?? 0) + 1;
 
+        // Track start time for latency measurement
+        if (event.id) {
+          pendingToolStarts.set(event.id, { toolName, startMs: new Date(event.timestamp).getTime() });
+        }
+
         // Detect skill invocations via SKILL.md reads
         const args = (event.data as { arguments?: Record<string, unknown> })
           .arguments ?? {};
@@ -161,6 +176,24 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
           /skills[/\\]([^/\\]+)[/\\]SKILL\.md$/i
         );
         if (skillMatch) skillsActivated.add(skillMatch[1]);
+        break;
+      }
+      case "tool.execution_complete": {
+        // Match with the corresponding start event by id (same id) or parentId
+        const startKey = pendingToolStarts.has(event.id)
+          ? event.id
+          : event.parentId && pendingToolStarts.has(event.parentId)
+          ? event.parentId
+          : null;
+        if (startKey) {
+          const pending = pendingToolStarts.get(startKey)!;
+          const latency = new Date(event.timestamp).getTime() - pending.startMs;
+          if (latency >= 0) {
+            if (!toolLatencyMs[pending.toolName]) toolLatencyMs[pending.toolName] = [];
+            toolLatencyMs[pending.toolName].push(latency);
+          }
+          pendingToolStarts.delete(startKey);
+        }
         break;
       }
     }
@@ -191,6 +224,9 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
     ? resolveWorkspaceName(wsStoragePath, workspaceHash)
     : "unknown";
 
+  const estimatedTotalTokens = estimatedInputTokens + estimatedOutputTokens;
+  const contextSaturation = Math.min(1, estimatedTotalTokens / COPILOT_CONTEXT_LIMIT_TOKENS);
+
   return {
     sessionId,
     workspaceHash,
@@ -202,10 +238,12 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
     assistantTurns,
     toolCallsTotal,
     toolCallsByName,
+    toolLatencyMs,
     skillsActivated: Array.from(skillsActivated),
     estimatedInputTokens,
     estimatedOutputTokens,
-    estimatedTotalTokens: estimatedInputTokens + estimatedOutputTokens,
+    estimatedTotalTokens,
+    contextSaturation,
     // Each assistant turn = 1 premium request (upper bound estimate)
     premiumRequests: assistantTurns,
     rawPath: filePath,

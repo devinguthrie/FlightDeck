@@ -190,6 +190,7 @@ export default function RoiExplorationPanel({
   skillStats,
 }: Props) {
   const trustScore = trustScoreFromAge(quotaAgeMinutes);
+  const [now] = useState(() => Date.now());
   const latestBilledPremium =
     quotaTimeSeries.length > 0
       ? quotaTimeSeries[quotaTimeSeries.length - 1].premiumUsed
@@ -324,7 +325,7 @@ export default function RoiExplorationPanel({
     const todayKey = new Date().toISOString().slice(0, 10);
     const todayBucket = dailyBuckets.find((d) => d.date === todayKey) ?? null;
     const todayTurns = todayBucket?.requests ?? null;
-    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+    const cutoff24h = now - 24 * 60 * 60 * 1000;
     const last24h = intradaySnapshots.filter(
       (p) => new Date(p.ts).getTime() >= cutoff24h
     );
@@ -338,7 +339,7 @@ export default function RoiExplorationPanel({
         ? todayTurns / todayPremiumDelta
         : null;
     return { todayTurns, todayPremiumDelta, todayRatio };
-  }, [dailyBuckets, intradaySnapshots]);
+  }, [dailyBuckets, intradaySnapshots, now]);
 
   // ─── Top skills by quality efficiency ─────────────────────────────────────
   const topSkillsByEfficiency = useMemo(
@@ -350,7 +351,7 @@ export default function RoiExplorationPanel({
     [skillStats]
   );
 
-  const [trendWindow, setTrendWindow] = useState<TimeWindow>("30d");
+  const [trendWindow, setTrendWindow] = useState<TimeWindow>("24h");
   const [intradayWindow, setIntradayWindow] = useState<TimeWindow>("24h");
 
   const trendSlice = useMemo(
@@ -376,13 +377,13 @@ export default function RoiExplorationPanel({
 
   const hourlyTrendSlice = useMemo(() => {
     const hours = windowToHours(trendWindow);
-    const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    const cutoff = now - hours * 60 * 60 * 1000;
     return hourlyTrend.filter((r) => new Date(r.hour).getTime() >= cutoff);
-  }, [hourlyTrend, trendWindow]);
+  }, [hourlyTrend, trendWindow, now]);
 
   const intradaySlice = useMemo(() => {
     const cutoffMs = windowToHours(intradayWindow) * 60 * 60 * 1000;
-    const cutoff = Date.now() - cutoffMs;
+    const cutoff = now - cutoffMs;
     const filtered = intradaySnapshots.filter(
       (p) => new Date(p.ts).getTime() >= cutoff
     );
@@ -393,7 +394,7 @@ export default function RoiExplorationPanel({
           ? null
           : Math.max(0, p.premiumUsed - filtered[i - 1].premiumUsed),
     }));
-  }, [intradaySnapshots, intradayWindow]);
+  }, [intradaySnapshots, intradayWindow, now]);
 
   const correlationLabel =
     qualityToolOverheadCorrelation === null

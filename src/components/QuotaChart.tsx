@@ -193,81 +193,83 @@ export default function QuotaChart({
         )}
       </div>
 
-      {/* Summary pills */}
-      <div className="flex flex-wrap gap-2 mb-4 mt-3">
-        {premiumEntitlement > 0 && (
-          <Pill
-            color="blue"
-            label="Premium"
-            used={timeSeries[timeSeries.length - 1]?.premiumUsed ?? 0}
-            total={premiumEntitlement}
-          />
-        )}
-        {chatEntitlement > 0 && (
-          <Pill
-            color="purple"
-            label="Chat"
-            used={timeSeries[timeSeries.length - 1]?.chatUsed ?? 0}
-            total={chatEntitlement}
-          />
-        )}
-        {completionsEntitlement > 0 && (
-          <Pill
-            color="green"
-            label="Inline completions"
-            used={timeSeries[timeSeries.length - 1]?.completionsUsed ?? 0}
-            total={completionsEntitlement}
-          />
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
-          {([
-            ["24h", "24h"],
-            ["7d", "7d"],
-            ["30d", "30d"],
-            ["cycle", "Cycle"],
-            ["all", "All"],
-          ] as Array<[RangeKey, string]>).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setRange(key)}
-              className={`px-2.5 py-1 text-xs rounded ${
-                range === key
-                  ? "bg-white border border-gray-300 text-gray-800"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+      {/* Summary pills + filter controls on the same row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4 mt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {premiumEntitlement > 0 && (
+            <Pill
+              color="blue"
+              label="Premium"
+              used={timeSeries[timeSeries.length - 1]?.premiumUsed ?? 0}
+              total={premiumEntitlement}
+            />
+          )}
+          {chatEntitlement > 0 && (
+            <Pill
+              color="purple"
+              label="Chat"
+              used={timeSeries[timeSeries.length - 1]?.chatUsed ?? 0}
+              total={chatEntitlement}
+            />
+          )}
+          {completionsEntitlement > 0 && (
+            <Pill
+              color="green"
+              label="Inline completions"
+              used={timeSeries[timeSeries.length - 1]?.completionsUsed ?? 0}
+              total={completionsEntitlement}
+            />
+          )}
         </div>
 
-        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
-          {([
-            ["raw", "Raw"],
-            ["hourly", "Hourly"],
-            ["daily", "Daily"],
-          ] as Array<[GranularityKey, string]>).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setGranularity(key)}
-              className={`px-2.5 py-1 text-xs rounded ${
-                granularity === key
-                  ? "bg-white border border-gray-300 text-gray-800"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
+            {([
+              ["24h", "24h"],
+              ["7d", "7d"],
+              ["30d", "30d"],
+              ["cycle", "Cycle"],
+              ["all", "All"],
+            ] as Array<[RangeKey, string]>).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRange(key)}
+                className={`px-2.5 py-1 text-xs rounded ${
+                  range === key
+                    ? "bg-white border border-gray-300 text-gray-800"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-        <div className="text-xs text-gray-500">
-          Showing {chartData.length} point{chartData.length === 1 ? "" : "s"} · {range} · {granularity}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
+            {([
+              ["raw", "Raw"],
+              ["hourly", "Hourly"],
+              ["daily", "Daily"],
+            ] as Array<[GranularityKey, string]>).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGranularity(key)}
+                className={`px-2.5 py-1 text-xs rounded ${
+                  granularity === key
+                    ? "bg-white border border-gray-300 text-gray-800"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="text-xs text-gray-500">
+            {chartData.length} pt{chartData.length === 1 ? "" : "s"} · {range} · {granularity}
+          </div>
         </div>
       </div>
 
@@ -281,7 +283,7 @@ export default function QuotaChart({
         <div className="flex items-center justify-center h-48 text-sm text-gray-400">
           Not enough data for this filter yet.
           <br />
-          Try a wider range or click "Copilot Telemetry: Refresh Now" in VS Code.
+          Try a wider range or click &ldquo;Copilot Telemetry: Refresh Now&rdquo; in VS Code.
         </div>
       ) : (
         <>

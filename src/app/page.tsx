@@ -82,6 +82,30 @@ interface StatsData {
   totalRequests: number;
   totalRated: number;
   avgQuality: number | null;
+  sevenDayRequests: number;
+  sevenDayBurnRate: number;
+  avgContextSaturation: number | null;
+  toolLatencies: Array<{
+    name: string;
+    count: number;
+    avgMs: number;
+    p50Ms: number;
+    p95Ms: number;
+  }>;
+  proxyStats: {
+    totalRequests: number;
+    cliRequests: number;
+    vscodeRequests: number;
+    proxyActive: boolean;
+    cliActive: boolean;
+    lastCapturedAt: string | null;
+    modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number }>;
+    tokenAccuracy: {
+      exactTotalTokens: number;
+      estimatedTotalTokens: number;
+      accuracyRatio: number;
+    } | null;
+  };
 }
 
 interface QuotaDataPoint {
@@ -124,6 +148,26 @@ interface Session {
     taskCompleted: string;
     note: string;
   } | null;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Map the GitHub copilot_plan string (or entitlement count) to a local PlanKey. */
+function inferPlanKey(
+  copilotPlan: string | null,
+  entitlement: number
+): "free" | "pro" | "pro+" | "business" | null {
+  if (copilotPlan) {
+    const lower = copilotPlan.toLowerCase();
+    if (lower.includes("pro_plus") || lower.includes("copilot_pro_plus")) return "pro+";
+    if (lower.includes("business") || lower.includes("enterprise")) return "business";
+    if (lower.includes("pro")) return "pro";
+    if (lower.includes("free")) return "free";
+  }
+  if (entitlement >= 1000) return "pro+";
+  if (entitlement === 300) return "pro";
+  if (entitlement === 50) return "free";
+  return null;
 }
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
@@ -238,6 +282,27 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avgDays]);
 
+  // Auto-sync plan when quota data shows a different entitlement than the stored config.
+  // This handles mid-cycle plan upgrades (e.g., Pro → Pro+).
+  useEffect(() => {
+    if (!quota?.available || !config) return;
+    const inferred = inferPlanKey(quota.copilotPlan, quota.premiumEntitlement);
+    if (!inferred || inferred === config.plan) return;
+    fetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: inferred }),
+    })
+      .then((r) => r.json())
+      .then((updated) => {
+        setConfig(updated as Config);
+        loadStats();
+      })
+      .catch(() => {});
+    // Only run when quota or config identity changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quota?.copilotPlan, quota?.premiumEntitlement, config?.plan]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -263,6 +328,26 @@ export default function Dashboard() {
 
   const billedPremiumUsed = quota?.available ? quota.premiumUsed : null;
 
+  // When a user upgrades plans mid-cycle, GitHub resets premiumUsed to 0 on the
+  // new plan. Detect this by finding a snapshot where premiumUsed drops by >30
+  // units AND >40% — a clear reset, not normal variation. Slice to post-reset
+  // only so burn rate / projection calcs don't see a negative delta.
+  const postResetTimeSeries = (() => {
+    if (!quota?.available || quota.timeSeries.length === 0) return quota?.timeSeries ?? [];
+    const sorted = [...quota.timeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    let lastResetIdx = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1].premiumUsed;
+      const curr = sorted[i].premiumUsed;
+      if (prev > 30 && curr < prev * 0.6 && prev - curr > 30) {
+        lastResetIdx = i;
+      }
+    }
+    return lastResetIdx > 0 ? sorted.slice(lastResetIdx) : sorted;
+  })();
+  const hadQuotaReset = quota?.available === true &&
+    postResetTimeSeries.length < (quota?.timeSeries.length ?? 0);
+
   const effectiveUsed = quota?.available ? quota.premiumUsed : stats.requestsThisCycle;
   const effectiveQuota = quota?.available ? quota.premiumEntitlement : stats.planQuota;
   const effectiveRemaining = quota?.available
@@ -271,12 +356,12 @@ export default function Dashboard() {
   const effectiveUsagePct = effectiveQuota > 0 ? effectiveUsed / effectiveQuota : 0;
 
   const billedBurnInfo = (() => {
-    if (!quota?.available || quota.timeSeries.length < 2) return null;
+    if (!quota?.available || postResetTimeSeries.length < 2) return null;
 
-    const sorted = [...quota.timeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const end = new Date(sorted[sorted.length - 1].timestamp).getTime();
+    // postResetTimeSeries is already sorted ascending
+    const end = new Date(postResetTimeSeries[postResetTimeSeries.length - 1].timestamp).getTime();
     const start = end - avgDays * 24 * 60 * 60 * 1000;
-    const window = sorted.filter((p) => new Date(p.timestamp).getTime() >= start);
+    const window = postResetTimeSeries.filter((p) => new Date(p.timestamp).getTime() >= start);
     if (window.length >= 2) {
       const first = window[0].premiumUsed;
       const last = window[window.length - 1].premiumUsed;
@@ -294,15 +379,19 @@ export default function Dashboard() {
       }
     }
 
-    const latest = sorted[sorted.length - 1];
-    const cycleElapsedMs = end - new Date(stats.cycleStart).getTime();
+    const latest = postResetTimeSeries[postResetTimeSeries.length - 1];
+    // Elapsed from the reset point (or cycle start if no reset) to now
+    const epochStart = hadQuotaReset
+      ? new Date(postResetTimeSeries[0].timestamp).getTime()
+      : new Date(stats.cycleStart).getTime();
+    const cycleElapsedMs = end - epochStart;
     if (cycleElapsedMs <= 0) return null;
     const cycleElapsedDays = cycleElapsedMs / (24 * 60 * 60 * 1000);
     if (cycleElapsedDays <= 0) return null;
 
     return {
       rate: Math.max(0, latest.premiumUsed / cycleElapsedDays),
-      basis: `billed cycle avg (${cycleElapsedDays.toFixed(1)}d elapsed)`,
+      basis: `billed ${hadQuotaReset ? "post-upgrade" : "cycle"} avg (${cycleElapsedDays.toFixed(1)}d elapsed)`,
     };
   })();
 
@@ -322,7 +411,7 @@ export default function Dashboard() {
   const projectedWithinCycle =
     effectiveProjectedExhaustionDate !== null && effectiveProjectedExhaustionDate <= cycleEndDate;
   const effectiveProjectionPoints = (() => {
-    if (!quota?.available || quota.timeSeries.length === 0) {
+    if (!quota?.available || postResetTimeSeries.length === 0) {
       return stats.projectionPoints;
     }
 
@@ -338,8 +427,12 @@ export default function Dashboard() {
       return next;
     };
 
+    // Build day → max premiumUsed from post-reset snapshots only.
+    // Using post-reset data means the "actual" line starts from 0 after the plan
+    // upgrade rather than showing the old-plan values, so the projection line
+    // connects cleanly to where the actual line ends.
     const byDay = new Map<string, number>();
-    for (const point of [...quota.timeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp))) {
+    for (const point of postResetTimeSeries) {
       const key = toDateStr(new Date(point.timestamp));
       const current = byDay.get(key);
       if (current === undefined || point.premiumUsed > current) {
@@ -349,6 +442,7 @@ export default function Dashboard() {
 
     const firstSnapshotDay = [...byDay.keys()].sort()[0];
     const latestSnapshotDay = [...byDay.keys()].sort().slice(-1)[0];
+    // latestUsed comes from the newest post-reset snapshot — matches byDay end value.
     const latestUsed = quota.premiumUsed;
     const points: ProjectionPoint[] = [];
     let carryActual: number | null = null;
@@ -382,13 +476,31 @@ export default function Dashboard() {
   })();
 
   const billedCoverageDays = (() => {
-    if (!quota?.available || quota.timeSeries.length < 2) return null;
-    const sorted = [...quota.timeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const start = new Date(sorted[0].timestamp).getTime();
-    const end = new Date(sorted[sorted.length - 1].timestamp).getTime();
+    if (!quota?.available || postResetTimeSeries.length < 2) return null;
+    const start = new Date(postResetTimeSeries[0].timestamp).getTime();
+    const end = new Date(postResetTimeSeries[postResetTimeSeries.length - 1].timestamp).getTime();
     const elapsedDays = (end - start) / (24 * 60 * 60 * 1000);
     return elapsedDays > 0 ? elapsedDays : 0;
   })();
+
+  // 7-day rolling from billed quota time series when available; else transcript estimate.
+  const sevenDayBilledRequests = (() => {
+    if (!quota?.available || postResetTimeSeries.length === 0) return null;
+    const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const latest = postResetTimeSeries[postResetTimeSeries.length - 1];
+    const before = postResetTimeSeries.filter((p) => new Date(p.timestamp).getTime() <= sevenDaysAgoMs);
+    const ref = before.length > 0 ? before[before.length - 1] : postResetTimeSeries[0];
+    return Math.max(0, latest.premiumUsed - ref.premiumUsed);
+  })();
+  const effectiveSevenDayRequests = sevenDayBilledRequests ?? stats.sevenDayRequests;
+  const sevenDaySourceLabel = sevenDayBilledRequests !== null ? "billed" : "est.";
+  const effectiveSevenDayBurnRate =
+    sevenDayBilledRequests !== null
+      ? Math.round((sevenDayBilledRequests / 7) * 10) / 10
+      : stats.sevenDayBurnRate;
+
+  // VS Code extension is "active" when the most recent quota snapshot is under 30 min old.
+  const vscodeExtActive = quota?.available === true && (quota.ageMinutes ?? 999) < 30;
 
   const projectionConfidenceLabel = (() => {
     if (!quota?.available) return "Transcript estimate only";
@@ -420,7 +532,46 @@ export default function Dashboard() {
               Billing cycle: {cycleStartLabel} – {cycleEndLabel}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* VS Code extension status */}
+            {quota !== null && (
+              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+                vscodeExtActive
+                  ? "bg-purple-50 border-purple-200 text-purple-700"
+                  : "bg-gray-50 border-gray-200 text-gray-400"
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  vscodeExtActive ? "bg-purple-500" : "bg-gray-300"
+                }`} />
+                VS Code Ext
+              </div>
+            )}
+            {/* Proxy server status */}
+            {stats && (
+              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+                stats.proxyStats.proxyActive
+                  ? "bg-green-50 border-green-200 text-green-700"
+                  : "bg-gray-50 border-gray-200 text-gray-400"
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  stats.proxyStats.proxyActive ? "bg-green-500" : "bg-gray-300"
+                }`} />
+                Proxy
+              </div>
+            )}
+            {/* Copilot CLI status */}
+            {stats && (
+              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+                stats.proxyStats.cliActive
+                  ? "bg-blue-50 border-blue-200 text-blue-700"
+                  : "bg-gray-50 border-gray-200 text-gray-400"
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  stats.proxyStats.cliActive ? "bg-blue-500" : "bg-gray-300"
+                }`} />
+                Copilot CLI
+              </div>
+            )}
             <button
               onClick={() => {
                 loadStats();
@@ -457,7 +608,7 @@ export default function Dashboard() {
           <KpiCard
             label={quota?.available ? "Premium Used This Cycle" : "Transcript Turns This Cycle"}
             value={`${effectiveUsed.toFixed(1)} / ${effectiveQuota}`}
-            sub={`${(effectiveUsagePct * 100).toFixed(0)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}`}
+            sub={`${(effectiveUsagePct * 100).toFixed(2)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}`}
             color="blue"
             progress={effectiveUsagePct}
           />
@@ -472,6 +623,39 @@ export default function Dashboard() {
             color="purple"
           />
         </div>
+
+        {/* 7-day rolling + Context saturation KPI row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <KpiCard
+            label="7-Day Rolling Requests"
+            value={`${effectiveSevenDayRequests}`}
+            sub={`${effectiveSevenDayBurnRate}/day avg · ${sevenDaySourceLabel} · independent of billing cycle`}
+            color="green"
+          />
+          <KpiCard
+            label="Avg Context Depth"
+            value={
+              stats.avgContextSaturation !== null
+                ? `${(stats.avgContextSaturation * 100).toFixed(1)}%`
+                : "No data"
+            }
+            sub={`Estimated % of 128k context window filled per session`}
+            color="amber"
+            progress={stats.avgContextSaturation ?? undefined}
+          />
+        </div>
+
+        {/* Token accuracy KPI — only shown when proxy has cycle data to compare */}
+        {stats.proxyStats.tokenAccuracy && (
+          <div className="grid grid-cols-1 gap-4">
+            <KpiCard
+              label="CLI vs VS Code Usage"
+              value={`${stats.proxyStats.cliRequests} CLI · ${Math.max(0, stats.totalRequests - stats.proxyStats.cliRequests)} VS Code`}
+              sub={`CLI: ${(stats.proxyStats.tokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k tokens exact · VS Code: ~${(stats.proxyStats.tokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k tokens estimated (transcript heuristic — system prompts & file context not captured, likely undercounted) · ${stats.totalRequests} total requests`}
+              color="purple"
+            />
+          </div>
+        )}
 
         <RoiExplorationPanel
           dailyBuckets={stats.dailyBuckets}
@@ -530,6 +714,106 @@ export default function Dashboard() {
         />
 
         <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} />
+
+        {/* Tool latency table */}
+        {stats.toolLatencies.length > 0 && (
+          <div className="rounded-lg bg-white border border-gray-200 p-5">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Tool Latency</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Execution time per tool call — P50 / P95 across all recorded sessions
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
+                    <th className="pb-2 pr-4">Tool</th>
+                    <th className="pb-2 pr-4 text-right">Calls</th>
+                    <th className="pb-2 pr-4 text-right">Avg</th>
+                    <th className="pb-2 pr-4 text-right">P50</th>
+                    <th className="pb-2 text-right">P95</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {stats.toolLatencies.map((t) => (
+                    <tr key={t.name} className="hover:bg-gray-50">
+                      <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{t.name}</td>
+                      <td className="py-1.5 pr-4 text-right text-gray-500">{t.count}</td>
+                      <td className="py-1.5 pr-4 text-right text-gray-500">{t.avgMs}ms</td>
+                      <td className="py-1.5 pr-4 text-right text-gray-700">{t.p50Ms}ms</td>
+                      <td className={`py-1.5 text-right font-medium ${
+                        t.p95Ms > 10000 ? "text-red-600" : t.p95Ms > 5000 ? "text-amber-600" : "text-gray-700"
+                      }`}>
+                        {t.p95Ms}ms
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* CLI Activity panel — shown when proxy is set up (any data ever recorded) */}
+        {stats.proxyStats.totalRequests > 0 && (
+          <div className="rounded-lg bg-white border border-gray-200 p-5">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-semibold text-gray-900">Proxy Capture</h2>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                stats.proxyStats.proxyActive
+                  ? "bg-green-50 border-green-200 text-green-700"
+                  : "bg-gray-50 border-gray-200 text-gray-400"
+              }`}>
+                {stats.proxyStats.proxyActive ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              {stats.proxyStats.totalRequests} total requests intercepted
+              {stats.proxyStats.lastCapturedAt && (
+                <> · last at {new Date(stats.proxyStats.lastCapturedAt).toLocaleString()}</>
+              )}
+            </p>
+
+            {/* Model breakdown */}
+            {stats.proxyStats.modelBreakdown.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
+                      <th className="pb-2 pr-4">Model</th>
+                      <th className="pb-2 pr-4 text-right">Requests</th>
+                      <th className="pb-2 pr-4 text-right">% of Total</th>
+                      <th className="pb-2 text-right">Avg Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {stats.proxyStats.modelBreakdown.map((m) => (
+                      <tr key={m.model} className="hover:bg-gray-50">
+                        <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{m.model}</td>
+                        <td className="py-1.5 pr-4 text-right text-gray-500">{m.count}</td>
+                        <td className="py-1.5 pr-4 text-right text-gray-500">
+                          {Math.round((m.count / Math.max(1, stats.proxyStats.totalRequests)) * 100)}%
+                        </td>
+                        <td className="py-1.5 text-right text-gray-700">{m.avgLatencyMs}ms</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Proxy setup prompt — shown when proxy not yet configured */}
+        {stats.proxyStats.totalRequests === 0 && (
+          <div className="rounded-lg bg-gray-50 border border-dashed border-gray-300 p-5">
+            <h2 className="text-sm font-semibold text-gray-600 mb-1">MITM Proxy — not set up</h2>
+            <p className="text-xs text-gray-500">
+              Run <code className="bg-white px-1 py-0.5 rounded border text-xs">scripts\Start-CopilotProxy.ps1</code> to
+              capture exact token counts and track Copilot CLI (including multi-agent) requests.
+              CLI sessions are invisible without the proxy.
+            </p>
+          </div>
+        )}
 
         {/* Session list with quality ratings */}
         <SessionList

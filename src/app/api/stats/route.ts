@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseAllSessions, parseIntradayActivity } from "@/lib/transcriptParser";
-import { getConfig, getAllRatings } from "@/lib/storage";
+import { parseIntradayActivity } from "@/lib/transcriptParser";
+import { getAllSessionsFromDb, getAllRatingsFromDb, getAllProxyRequestsFromDb } from "@/lib/db";
+import { getConfig } from "@/lib/storage";
 import { computeStats } from "@/lib/statsEngine";
 
 // Re-export types that the rest of the codebase may rely on from this path
 export type {
   DailyBucket,
   ToolCount,
+  ToolLatency,
   SkillStats,
   MarginalQualityBucket,
+  ProxyStats,
   StatsResponse,
 } from "@/lib/statsEngine";
 
@@ -21,12 +24,13 @@ export async function GET(req: NextRequest) {
 
   try {
     const config = getConfig();
-    const ratings = getAllRatings();
-    const sessions = parseAllSessions();
+    const sessions = getAllSessionsFromDb();
+    const ratings = getAllRatingsFromDb();
     const intradayBuckets = parseIntradayActivity(24);
+    const proxyRequests = getAllProxyRequestsFromDb();
 
     return NextResponse.json(
-      computeStats(sessions, intradayBuckets, ratings, config, new Date(), avgDays)
+      computeStats(sessions, intradayBuckets, ratings, config, new Date(), avgDays, proxyRequests)
     );
   } catch (err) {
     console.error("GET /api/stats error:", err);

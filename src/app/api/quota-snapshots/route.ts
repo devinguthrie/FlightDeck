@@ -1,24 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { existsSync, mkdirSync, appendFileSync } from "fs";
-import path from "path";
-import os from "os";
-import { parseSnapshots, type QuotaSnapshotRecord } from "@/lib/snapshotParser";
+import type { QuotaSnapshotRecord } from "@/lib/snapshotParser";
+import { upsertQuotaSnapshot, buildQuotaSummaryFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const TELEMETRY_DIR = path.join(
-  os.homedir(),
-  "AppData",
-  "Roaming",
-  "copilot-telemetry"
-);
-const SNAPSHOTS_FILE = path.join(TELEMETRY_DIR, "snapshots.jsonl");
-
 /** GET /api/quota-snapshots — returns parsed quota summary + time series */
 export async function GET(_req: NextRequest) {
   try {
-    const summary = parseSnapshots();
+    const summary = buildQuotaSummaryFromDb();
     return NextResponse.json(summary);
   } catch (err) {
     console.error("[quota-snapshots] GET error:", err);
@@ -28,7 +18,7 @@ export async function GET(_req: NextRequest) {
 
 /**
  * POST /api/quota-snapshots — called by the VS Code extension to push a live snapshot.
- * Appends the snapshot to the local file and returns 204.
+ * Upserts the snapshot into SQLite (dedup by recorded_at) and returns 204.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -39,11 +29,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid snapshot payload" }, { status: 400 });
     }
 
-    if (!existsSync(TELEMETRY_DIR)) {
-      mkdirSync(TELEMETRY_DIR, { recursive: true });
+    // recorded_at must be a valid ISO-8601 date string (used as PRIMARY KEY in SQLite)
+    if (Number.isNaN(Date.parse(body.recorded_at))) {
+      return NextResponse.json({ error: "recorded_at must be a valid ISO-8601 date string" }, { status: 400 });
     }
 
-    appendFileSync(SNAPSHOTS_FILE, JSON.stringify(body) + "\n", "utf-8");
+    upsertQuotaSnapshot(body);
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

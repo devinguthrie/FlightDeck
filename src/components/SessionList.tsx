@@ -161,6 +161,7 @@ function RatingCell({
 
 export default function SessionList({ sessions, onRated }: Props) {
   const [showUnratedOnly, setShowUnratedOnly] = useState(false);
+  const [now] = useState(() => Date.now());
 
   const thresholds = useMemo(() => {
     const sortedRequests = [...sessions].map((s) => s.premiumRequests).sort((a, b) => a - b);
@@ -225,7 +226,7 @@ export default function SessionList({ sessions, onRated }: Props) {
   }
 
   function isRecentlyActive(iso: string): boolean {
-    return Date.now() - new Date(iso).getTime() < 15 * 60 * 1000;
+    return now - new Date(iso).getTime() < 15 * 60 * 1000;
   }
 
   return (

@@ -1,0 +1,8 @@
+title = "FlightDeck gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlist.commits]]
+# Initial setup commit — no real secrets, queue-microtask in package-lock matches sk- prefix
+commits = ["540406acb384828e5e3496b34219b0e08adb1e9f"]
