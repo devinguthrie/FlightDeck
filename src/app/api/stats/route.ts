@@ -21,10 +21,14 @@ export const revalidate = 0;
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
   const avgDays = Math.max(1, Math.min(30, Number(searchParams.get("avgDays") ?? "7")));
+  const workspace = searchParams.get("workspace"); // null = all projects
 
   try {
     const config = getConfig();
-    const sessions = getAllSessionsFromDb();
+    const allSessions = getAllSessionsFromDb();
+    const sessions = workspace
+      ? allSessions.filter((s) => s.workspaceName === workspace)
+      : allSessions;
     const ratings = getAllRatingsFromDb();
     const intradayBuckets = parseIntradayActivity(24);
     const proxyRequests = getAllProxyRequestsFromDb();

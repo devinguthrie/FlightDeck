@@ -610,3 +610,96 @@ describe("full 3-month dataset integration", () => {
     expect(result.planQuota).toBe(400); // 300 + 100
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("token volume metrics", () => {
+  it("dailyBuckets accumulate inputTokens and outputTokens from sessions", () => {
+    // Each session in the fixture has estimatedInputTokens:2000 and estimatedOutputTokens:4000
+    const result = runDefault();
+    const bucketsWithSessions = result.dailyBuckets.filter((b) => b.sessions > 0);
+    for (const bucket of bucketsWithSessions) {
+      expect(bucket.inputTokens).toBeGreaterThan(0);
+      expect(bucket.outputTokens).toBeGreaterThan(0);
+    }
+  });
+
+  it("zero-session buckets have zero inputTokens and outputTokens", () => {
+    const result = runDefault();
+    const emptyBuckets = result.dailyBuckets.filter((b) => b.sessions === 0);
+    for (const bucket of emptyBuckets) {
+      expect(bucket.inputTokens).toBe(0);
+      expect(bucket.outputTokens).toBe(0);
+    }
+  });
+
+  it("inputTokens per bucket equals sessions * 2000 (no proxy requests)", () => {
+    // makeSession defaults: estimatedInputTokens:2000, no proxy requests → only transcript tokens
+    const result = runDefault();
+    for (const bucket of result.dailyBuckets) {
+      expect(bucket.inputTokens).toBe(bucket.sessions * 2000);
+    }
+  });
+
+  it("outputInputRatio is null when there are no proxy requests", () => {
+    const result = runDefault();
+    // No proxy requests in the default fixture
+    expect(result.outputInputRatio).toBeNull();
+  });
+
+  it("outputInputRatio is computed correctly from proxy requests", () => {
+    const makeProxy = (prompt: number, completion: number) => ({
+      ts: TODAY.toISOString(),
+      model: "claude-sonnet-4-5",
+      promptTokens: prompt,
+      completionTokens: completion,
+      totalTokens: prompt + completion,
+      latencyMs: 1000,
+      source: "cli" as const,
+    });
+    const result = computeStats(
+      THREE_MONTH_SESSIONS,
+      NO_INTRADAY,
+      RATINGS,
+      DEFAULT_CONFIG,
+      TODAY,
+      7,
+      [makeProxy(1000, 500), makeProxy(2000, 1000)]
+    );
+    // (500+1000) / (1000+2000) = 1500/3000 = 0.5
+    expect(result.outputInputRatio).toBe(0.5);
+  });
+
+  it("topWorkspacesByTokens aggregates token volumes per workspace", () => {
+    const result = runDefault();
+    // All makeSession() fixtures default to workspaceName:"FlightDeck"
+    expect(result.topWorkspacesByTokens.length).toBeGreaterThan(0);
+    const flightDeck = result.topWorkspacesByTokens.find((w) => w.workspace === "FlightDeck");
+    expect(flightDeck).toBeDefined();
+    expect(flightDeck!.inputTokens).toBe(34 * 2000); // 34 sessions * 2000
+    expect(flightDeck!.outputTokens).toBe(34 * 4000); // 34 sessions * 4000
+  });
+
+  it("topWorkspacesByTokens is sorted by total tokens descending", () => {
+    const sessions = [
+      makeSession({ sessionId: "w1", workspaceName: "Alpha", estimatedInputTokens: 100, estimatedOutputTokens: 200, startedAt: TODAY.toISOString() }),
+      makeSession({ sessionId: "w2", workspaceName: "Beta", estimatedInputTokens: 5000, estimatedOutputTokens: 10000, startedAt: TODAY.toISOString() }),
+    ];
+    const result = computeStats(sessions, NO_INTRADAY, {}, DEFAULT_CONFIG, TODAY, 7);
+    expect(result.topWorkspacesByTokens[0].workspace).toBe("Beta");
+    expect(result.topWorkspacesByTokens[1].workspace).toBe("Alpha");
+  });
+
+  it("topWorkspacesByTokens returns at most 10 entries", () => {
+    const sessions = Array.from({ length: 15 }, (_, i) =>
+      makeSession({
+        sessionId: `s${i}`,
+        workspaceName: `Workspace${i}`,
+        estimatedInputTokens: (15 - i) * 1000,
+        estimatedOutputTokens: (15 - i) * 2000,
+        startedAt: TODAY.toISOString(),
+      })
+    );
+    const result = computeStats(sessions, NO_INTRADAY, {}, DEFAULT_CONFIG, TODAY, 7);
+    expect(result.topWorkspacesByTokens.length).toBeLessThanOrEqual(10);
+  });
+});

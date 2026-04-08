@@ -18,6 +18,8 @@ export interface DailyBucket {
   sessions: number;
   toolCalls: number;
   skills: string[]; // deduplicated skills activated across all sessions on this day
+  inputTokens: number;  // VS Code estimated + CLI exact prompt tokens
+  outputTokens: number; // VS Code estimated + CLI exact completion tokens
 }
 
 export interface ToolCount {
@@ -52,7 +54,7 @@ export interface ProxyStats {
   /** True if any CLI-sourced record was captured in the last 24 hours. */
   cliActive: boolean;
   lastCapturedAt: string | null;
-  modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number }>;
+  modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number; totalPromptTokens: number; totalCompletionTokens: number }>;
   /**
    * Token accuracy: exact proxy tokens vs transcript-estimated tokens for the
    * current billing cycle. Null until both proxy and transcript data exist.
@@ -120,6 +122,10 @@ export interface StatsResponse {
 
   // MITM proxy data
   proxyStats: ProxyStats;
+
+  // Token volume metrics (proxy exact CLI tokens + transcript estimated VS Code tokens)
+  outputInputRatio: number | null;
+  topWorkspacesByTokens: Array<{ workspace: string; inputTokens: number; outputTokens: number }>;
 }
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
@@ -236,7 +242,7 @@ export function computeStats(
     if (d < thirtyDaysAgo) continue;
     const key = toDateStr(d);
     if (!bucketsMap[key]) {
-      bucketsMap[key] = { date: key, requests: 0, sessions: 0, toolCalls: 0, skills: [] };
+      bucketsMap[key] = { date: key, requests: 0, sessions: 0, toolCalls: 0, skills: [], inputTokens: 0, outputTokens: 0 };
     }
     bucketsMap[key].requests += s.premiumRequests;
     bucketsMap[key].sessions += 1;
@@ -246,12 +252,24 @@ export function computeStats(
         bucketsMap[key].skills.push(skill);
       }
     }
+    bucketsMap[key].inputTokens += s.estimatedInputTokens;
+    bucketsMap[key].outputTokens += s.estimatedOutputTokens;
   }
   // Fill gaps with zero-value days — guaranteed 30 days
   for (let i = 0; i < 30; i++) {
     const key = toDateStr(addDays(today, -29 + i));
     if (!bucketsMap[key]) {
-      bucketsMap[key] = { date: key, requests: 0, sessions: 0, toolCalls: 0, skills: [] };
+      bucketsMap[key] = { date: key, requests: 0, sessions: 0, toolCalls: 0, skills: [], inputTokens: 0, outputTokens: 0 };
+    }
+  }
+  // Add CLI proxy token counts to daily buckets (separate population from VS Code transcript estimates)
+  for (const r of proxyRequests) {
+    const d = new Date(r.ts);
+    if (d < thirtyDaysAgo) continue;
+    const key = toDateStr(d);
+    if (bucketsMap[key]) {
+      bucketsMap[key].inputTokens += r.promptTokens ?? 0;
+      bucketsMap[key].outputTokens += r.completionTokens ?? 0;
     }
   }
   const dailyBuckets = Object.values(bucketsMap).sort((a, b) =>
@@ -356,17 +374,21 @@ export function computeStats(
   const cliRequests = proxyRequests.filter((r) => r.source === "cli").length;
   const vscodeRequests = proxyRequests.filter((r) => r.source === "vscode").length;
 
-  const modelMap: Record<string, { count: number; totalLatency: number }> = {};
+  const modelMap: Record<string, { count: number; totalLatency: number; totalPromptTokens: number; totalCompletionTokens: number }> = {};
   for (const r of proxyRequests) {
-    if (!modelMap[r.model]) modelMap[r.model] = { count: 0, totalLatency: 0 };
+    if (!modelMap[r.model]) modelMap[r.model] = { count: 0, totalLatency: 0, totalPromptTokens: 0, totalCompletionTokens: 0 };
     modelMap[r.model].count++;
     modelMap[r.model].totalLatency += r.latencyMs;
+    modelMap[r.model].totalPromptTokens += r.promptTokens ?? 0;
+    modelMap[r.model].totalCompletionTokens += r.completionTokens ?? 0;
   }
   const modelBreakdown = Object.entries(modelMap)
     .map(([model, data]) => ({
       model,
       count: data.count,
       avgLatencyMs: Math.round(data.totalLatency / data.count),
+      totalPromptTokens: data.totalPromptTokens,
+      totalCompletionTokens: data.totalCompletionTokens,
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -394,6 +416,30 @@ export function computeStats(
     modelBreakdown,
     tokenAccuracy,
   };
+
+  // ─── Output/input ratio (CLI exact tokens) ────────────────────────────────────
+  const ratioRequests = proxyRequests.filter(
+    (r) => r.promptTokens !== null && r.completionTokens !== null
+  );
+  const totalPromptForRatio = ratioRequests.reduce((sum, r) => sum + (r.promptTokens ?? 0), 0);
+  const totalCompletionForRatio = ratioRequests.reduce((sum, r) => sum + (r.completionTokens ?? 0), 0);
+  const outputInputRatio =
+    totalPromptForRatio > 0
+      ? Math.round((totalCompletionForRatio / totalPromptForRatio) * 1000) / 1000
+      : null;
+
+  // ─── Top workspaces by estimated token volume ─────────────────────────────────
+  const workspaceTokenMap: Record<string, { inputTokens: number; outputTokens: number }> = {};
+  for (const s of sessions) {
+    const ws = s.workspaceName || "unknown";
+    if (!workspaceTokenMap[ws]) workspaceTokenMap[ws] = { inputTokens: 0, outputTokens: 0 };
+    workspaceTokenMap[ws].inputTokens += s.estimatedInputTokens;
+    workspaceTokenMap[ws].outputTokens += s.estimatedOutputTokens;
+  }
+  const topWorkspacesByTokens = Object.entries(workspaceTokenMap)
+    .map(([workspace, data]) => ({ workspace, ...data }))
+    .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+    .slice(0, 10);
 
   // ─── Skill stats (ROI correlation) ───────────────────────────────────────────
   const skillMap: Record<
@@ -572,5 +618,7 @@ export function computeStats(
     sevenDayBurnRate,
     avgContextSaturation,
     proxyStats,
+    outputInputRatio,
+    topWorkspacesByTokens,
   };
 }

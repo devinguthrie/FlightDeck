@@ -8,6 +8,7 @@ import RoiExplorationPanel from "@/components/RoiExplorationPanel";
 import ToolBreakdown from "@/components/ToolBreakdown";
 import SessionList from "@/components/SessionList";
 import ConfigPanel from "@/components/ConfigPanel";
+import TokenVolumeChart from "@/components/TokenVolumeChart";
 import type { PlanKey } from "@/lib/pricing";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +26,8 @@ interface DailyBucket {
   sessions: number;
   toolCalls: number;
   skills: string[];
+  inputTokens: number;
+  outputTokens: number;
 }
 
 interface IntradayBucket {
@@ -99,13 +102,15 @@ interface StatsData {
     proxyActive: boolean;
     cliActive: boolean;
     lastCapturedAt: string | null;
-    modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number }>;
+    modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number; totalPromptTokens: number; totalCompletionTokens: number }>;
     tokenAccuracy: {
       exactTotalTokens: number;
       estimatedTotalTokens: number;
       accuracyRatio: number;
     } | null;
   };
+  outputInputRatio: number | null;
+  topWorkspacesByTokens: Array<{ workspace: string; inputTokens: number; outputTokens: number }>;
 }
 
 interface QuotaDataPoint {
@@ -169,7 +174,12 @@ function inferPlanKey(
   if (entitlement === 50) return "free";
   return null;
 }
-
+/** Format a token count as a human-readable string (K / M suffix). */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
+  return String(n);
+}
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
 function KpiCard({
@@ -226,16 +236,24 @@ export default function Dashboard() {
   const [timeRange, setTimeRange] = useState<"7d" | "30d">("7d");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [workspaceList, setWorkspaceList] = useState<string[]>([]);
 
   const loadStats = useCallback(async () => {
     try {
-      const res = await fetch(`/api/stats?avgDays=${avgDays}`, { cache: "no-store" });
+      const wsParam = selectedWorkspace ? `&workspace=${encodeURIComponent(selectedWorkspace)}` : "";
+      const res = await fetch(`/api/stats?avgDays=${avgDays}${wsParam}`, { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
-      setStats((await res.json()) as StatsData);
+      const data = (await res.json()) as StatsData;
+      setStats(data);
+      // Only update the workspace list from unfiltered loads so the dropdown isn't cleared
+      if (!selectedWorkspace) {
+        setWorkspaceList(data.topWorkspacesByTokens.map((w) => w.workspace));
+      }
     } catch (e) {
       setError(String(e));
     }
-  }, [avgDays]);
+  }, [avgDays, selectedWorkspace]);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -276,11 +294,11 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reload stats when avgDays changes
+  // Reload stats when avgDays or workspace filter changes
   useEffect(() => {
     if (!loading) loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avgDays]);
+  }, [avgDays, selectedWorkspace]);
 
   // Auto-sync plan when quota data shows a different entitlement than the stored config.
   // This handles mid-cycle plan upgrades (e.g., Pro → Pro+).
@@ -572,6 +590,20 @@ export default function Dashboard() {
                 Copilot CLI
               </div>
             )}
+            {/* Project filter dropdown */}
+            {workspaceList.length > 1 && (
+              <select
+                value={selectedWorkspace ?? ""}
+                onChange={(e) => setSelectedWorkspace(e.target.value || null)}
+                className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                title="Filter transcript metrics by project"
+              >
+                <option value="">All projects</option>
+                {workspaceList.map((ws) => (
+                  <option key={ws} value={ws}>{ws}</option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => {
                 loadStats();
@@ -608,7 +640,7 @@ export default function Dashboard() {
           <KpiCard
             label={quota?.available ? "Premium Used This Cycle" : "Transcript Turns This Cycle"}
             value={`${effectiveUsed.toFixed(1)} / ${effectiveQuota}`}
-            sub={`${(effectiveUsagePct * 100).toFixed(2)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}`}
+            sub={`${(effectiveUsagePct * 100).toFixed(2)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}${selectedWorkspace ? " · account-wide, not project-scoped" : ""}`}
             color="blue"
             progress={effectiveUsagePct}
           />
@@ -629,7 +661,7 @@ export default function Dashboard() {
           <KpiCard
             label="7-Day Rolling Requests"
             value={`${effectiveSevenDayRequests}`}
-            sub={`${effectiveSevenDayBurnRate}/day avg · ${sevenDaySourceLabel} · independent of billing cycle`}
+            sub={`${effectiveSevenDayBurnRate}/day avg · ${sevenDaySourceLabel} · independent of billing cycle${selectedWorkspace ? " · account-wide, not project-scoped" : ""}`}
             color="green"
           />
           <KpiCard
@@ -645,15 +677,25 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Token accuracy KPI — only shown when proxy has cycle data to compare */}
-        {stats.proxyStats.tokenAccuracy && (
-          <div className="grid grid-cols-1 gap-4">
-            <KpiCard
-              label="CLI vs VS Code Usage"
-              value={`${stats.proxyStats.cliRequests} CLI · ${Math.max(0, stats.totalRequests - stats.proxyStats.cliRequests)} VS Code`}
-              sub={`CLI: ${(stats.proxyStats.tokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k tokens exact · VS Code: ~${(stats.proxyStats.tokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k tokens estimated (transcript heuristic — system prompts & file context not captured, likely undercounted) · ${stats.totalRequests} total requests`}
-              color="purple"
-            />
+        {/* Token accuracy + output/input ratio KPIs — shown when proxy has data */}
+        {(stats.proxyStats.tokenAccuracy || stats.outputInputRatio !== null) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {stats.proxyStats.tokenAccuracy && (
+              <KpiCard
+                label={`CLI vs VS Code Usage${selectedWorkspace ? " (account-wide)" : ""}`}
+                value={`${stats.proxyStats.cliRequests} CLI · ${Math.max(0, stats.totalRequests - stats.proxyStats.cliRequests)} VS Code`}
+                sub={`CLI: ${(stats.proxyStats.tokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k tokens exact · VS Code: ~${(stats.proxyStats.tokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k tokens estimated (transcript heuristic — system prompts & file context not captured, likely undercounted) · ${stats.totalRequests} total requests`}
+                color="purple"
+              />
+            )}
+            {stats.outputInputRatio !== null && (
+              <KpiCard
+                label={`Output / Input Ratio (CLI)${selectedWorkspace ? " (account-wide)" : ""}`}
+                value={`${stats.outputInputRatio}×`}
+                sub={`Completion tokens per prompt token from MITM proxy · ${fmtTokens(stats.proxyStats.modelBreakdown.reduce((s, m) => s + m.totalCompletionTokens, 0))} completion ÷ ${fmtTokens(stats.proxyStats.modelBreakdown.reduce((s, m) => s + m.totalPromptTokens, 0))} prompt`}
+                color="green"
+              />
+            )}
           </div>
         )}
 
@@ -714,6 +756,11 @@ export default function Dashboard() {
         />
 
         <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} />
+
+        <TokenVolumeChart
+          dailyBuckets={stats.dailyBuckets}
+          topWorkspacesByTokens={stats.topWorkspacesByTokens}
+        />
 
         {/* Tool latency table */}
         {stats.toolLatencies.length > 0 && (
@@ -782,6 +829,8 @@ export default function Dashboard() {
                       <th className="pb-2 pr-4">Model</th>
                       <th className="pb-2 pr-4 text-right">Requests</th>
                       <th className="pb-2 pr-4 text-right">% of Total</th>
+                      <th className="pb-2 pr-4 text-right">Prompt Tokens</th>
+                      <th className="pb-2 pr-4 text-right">Completion Tokens</th>
                       <th className="pb-2 text-right">Avg Latency</th>
                     </tr>
                   </thead>
@@ -792,6 +841,12 @@ export default function Dashboard() {
                         <td className="py-1.5 pr-4 text-right text-gray-500">{m.count}</td>
                         <td className="py-1.5 pr-4 text-right text-gray-500">
                           {Math.round((m.count / Math.max(1, stats.proxyStats.totalRequests)) * 100)}%
+                        </td>
+                        <td className="py-1.5 pr-4 text-right text-gray-500">
+                          {m.totalPromptTokens > 0 ? fmtTokens(m.totalPromptTokens) : "—"}
+                        </td>
+                        <td className="py-1.5 pr-4 text-right text-gray-500">
+                          {m.totalCompletionTokens > 0 ? fmtTokens(m.totalCompletionTokens) : "—"}
                         </td>
                         <td className="py-1.5 text-right text-gray-700">{m.avgLatencyMs}ms</td>
                       </tr>
@@ -817,7 +872,7 @@ export default function Dashboard() {
 
         {/* Session list with quality ratings */}
         <SessionList
-          sessions={sessions}
+          sessions={selectedWorkspace ? sessions.filter((s) => s.workspaceName === selectedWorkspace) : sessions}
           onRated={() => {
             loadSessions();
             loadStats();
