@@ -29,6 +29,7 @@ interface SkillStats {
 interface Props {
   topTools: ToolCount[];
   skillStats: SkillStats[];
+  totalRated: number;
 }
 
 function qualityPerRequest(avgQuality: number | null, avgRequests: number): number | null {
@@ -47,7 +48,9 @@ function isCoreSkillTool(name: string): boolean {
   return SKILL_READERS.has(name);
 }
 
-export default function ToolBreakdown({ topTools, skillStats }: Props) {
+export default function ToolBreakdown({ topTools, skillStats, totalRated }: Props) {
+  const hasQualitySignal = totalRated >= 5;
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       {/* Tool call frequency chart */}
@@ -99,11 +102,16 @@ export default function ToolBreakdown({ topTools, skillStats }: Props) {
       <div className="rounded-lg bg-white border border-gray-200 p-5">
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Skill Impact</h2>
         <p className="text-xs text-gray-500 mb-4">
-          Sessions where each skill was activated — quality requires rating data
+          Recognized workflow skills only. Quality columns stay hidden until 5 rated sessions.
         </p>
+        {!hasQualitySignal && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Quality lift is too noisy with {totalRated} rated session{totalRated === 1 ? "" : "s"}. FlightDeck now waits for 5+ ratings before showing quality comparisons.
+          </div>
+        )}
         {skillStats.length === 0 ? (
           <p className="text-sm text-gray-400 py-8 text-center">
-            No skills detected yet. Skills are identified when an agent reads a SKILL.md file.
+            No recognized skills detected yet. FlightDeck now ignores arbitrary repo SKILL.md files.
           </p>
         ) : (
           <div className="overflow-auto">
@@ -113,9 +121,13 @@ export default function ToolBreakdown({ topTools, skillStats }: Props) {
                   <th className="pb-2 font-medium">Skill</th>
                   <th className="pb-2 font-medium text-right">Sessions</th>
                   <th className="pb-2 font-medium text-right">Avg Req</th>
-                  <th className="pb-2 font-medium text-right">Avg Quality</th>
-                  <th className="pb-2 font-medium text-right">Quality/100 Req</th>
-                  <th className="pb-2 font-medium text-right">Lift vs Baseline</th>
+                  {hasQualitySignal && (
+                    <>
+                      <th className="pb-2 font-medium text-right">Avg Quality</th>
+                      <th className="pb-2 font-medium text-right">Quality/100 Req</th>
+                      <th className="pb-2 font-medium text-right">Lift vs Baseline</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -126,49 +138,53 @@ export default function ToolBreakdown({ topTools, skillStats }: Props) {
                     </td>
                     <td className="py-2 text-right text-gray-600">{s.sessions}</td>
                     <td className="py-2 text-right text-gray-600">{s.avgRequests}</td>
-                    <td className="py-2 text-right">
-                      {s.avgQuality !== null ? (
-                        <span
-                          className={`font-semibold ${
-                            s.avgQuality >= 4
-                              ? "text-green-600"
-                              : s.avgQuality >= 3
-                              ? "text-yellow-600"
-                              : "text-red-500"
-                          }`}
-                        >
-                          {s.avgQuality}/5
-                          <span className="text-gray-400 font-normal text-[10px] ml-1">
-                            n={s.sampleSize}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">no ratings yet</span>
-                      )}
-                    </td>
-                    <td className="py-2 text-right">
-                      {qualityPerRequest(s.avgQuality, s.avgRequests) !== null ? (
-                        <span className="font-semibold text-indigo-600">
-                          {qualityPerRequest(s.avgQuality, s.avgRequests)!.toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">-</span>
-                      )}
-                    </td>
-                    <td className="py-2 text-right">
-                      {s.liftVsBaseline !== null ? (
-                        <span
-                          className={`font-semibold ${
-                            s.liftVsBaseline >= 0 ? "text-green-600" : "text-red-500"
-                          }`}
-                        >
-                          {s.liftVsBaseline > 0 ? "+" : ""}
-                          {s.liftVsBaseline.toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">-</span>
-                      )}
-                    </td>
+                    {hasQualitySignal && (
+                      <>
+                        <td className="py-2 text-right">
+                          {s.avgQuality !== null ? (
+                            <span
+                              className={`font-semibold ${
+                                s.avgQuality >= 4
+                                  ? "text-green-600"
+                                  : s.avgQuality >= 3
+                                  ? "text-yellow-600"
+                                  : "text-red-500"
+                              }`}
+                            >
+                              {s.avgQuality}/5
+                              <span className="text-gray-400 font-normal text-[10px] ml-1">
+                                n={s.sampleSize}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">no ratings yet</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          {qualityPerRequest(s.avgQuality, s.avgRequests) !== null ? (
+                            <span className="font-semibold text-indigo-600">
+                              {qualityPerRequest(s.avgQuality, s.avgRequests)!.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">-</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          {s.liftVsBaseline !== null ? (
+                            <span
+                              className={`font-semibold ${
+                                s.liftVsBaseline >= 0 ? "text-green-600" : "text-red-500"
+                              }`}
+                            >
+                              {s.liftVsBaseline > 0 ? "+" : ""}
+                              {s.liftVsBaseline.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">-</span>
+                          )}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>

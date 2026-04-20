@@ -230,12 +230,24 @@ describe("parseTranscriptFile", () => {
       expect(result.durationMinutes).toBeCloseTo(30, 0);
     });
 
+    it("caps long idle gaps when computing activeMinutes", () => {
+      const f = writeTmpTranscript("active-time.jsonl", [
+        sessionStart("s-active", "2026-04-01T10:00:00Z"),
+        userMsg("start", "2026-04-01T10:00:30Z"),
+        assistantTurnStart("2026-04-01T10:00:31Z"),
+        assistantMsg("reply", "2026-04-01T10:30:00Z"),
+      ]);
+      const result = parseTranscriptFile(f)!;
+      expect(result.activeMinutes).toBeCloseTo(5.5, 1);
+    });
+
     it("returns 0 duration for a session with only a start event", () => {
       const f = writeTmpTranscript("zero-dur.jsonl", [
         sessionStart("s-zd", "2026-04-01T10:00:00Z"),
       ]);
       const result = parseTranscriptFile(f)!;
       expect(result.durationMinutes).toBe(0);
+      expect(result.activeMinutes).toBe(0);
     });
 
     it("sets endedAt to the latest event timestamp", () => {

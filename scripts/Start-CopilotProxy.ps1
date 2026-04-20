@@ -80,9 +80,13 @@ $LogFileErr = Join-Path ([System.IO.Path]::GetTempPath()) "flightdeck-proxy.err.
 
 Write-Host "Starting FlightDeck proxy on port $Port..." -ForegroundColor Cyan
 
+# Only intercept TLS for Copilot domains; all other hosts are passed through as
+# plain TCP tunnels so tools like npm never see a substituted certificate.
+$CopilotHosts = "copilot-proxy\.githubusercontent\.com|.*\.githubcopilot\.com|api\.github\.com/.*copilot"
+
 $proc = Start-Process `
     -FilePath "mitmdump" `
-    -ArgumentList @("--listen-port", $Port, "--ssl-insecure", "-s", $AddonPath, "--quiet") `
+    -ArgumentList @("--listen-port", $Port, "--ssl-insecure", "--allow-hosts", $CopilotHosts, "-s", $AddonPath, "--quiet") `
     -NoNewWindow `
     -RedirectStandardOutput $LogFile `
     -RedirectStandardError $LogFileErr `

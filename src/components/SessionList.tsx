@@ -8,6 +8,7 @@ interface Session {
   startedAt: string;
   endedAt: string;
   durationMinutes: number;
+  activeMinutes: number;
   premiumRequests: number;
   toolCallsTotal: number;
   skillsActivated: string[];
@@ -198,7 +199,7 @@ export default function SessionList({ sessions, onRated }: Props) {
       flags.push("Tool-heavy");
     }
     if (s.durationMinutes >= thresholds.highDuration && thresholds.highDuration > 0) {
-      flags.push("Long run");
+      flags.push("Long-open");
     }
     if (s.rating && s.rating.quality <= 2 && s.premiumRequests >= thresholds.highRequests) {
       flags.push("Potential waste");
@@ -235,7 +236,7 @@ export default function SessionList({ sessions, onRated }: Props) {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Sessions</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {sessions.length} sessions found — click &ldquo;Rate&rdquo; to score output quality
+            {sessions.length} sessions found — span is first-to-last event time, so long sessions can include idle time
           </p>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
@@ -263,7 +264,7 @@ export default function SessionList({ sessions, onRated }: Props) {
                 <th className="pb-2 font-medium text-right">Req~</th>
                 <th className="pb-2 font-medium text-right">Tools</th>
                 <th className="pb-2 font-medium text-right">Tokens~</th>
-                <th className="pb-2 font-medium text-right">Duration</th>
+                <th className="pb-2 font-medium text-right">Open Span</th>
                 <th className="pb-2 font-medium">Skills</th>
                 <th className="pb-2 font-medium">Flags</th>
                 <th className="pb-2 font-medium">Quality</th>
@@ -294,7 +295,8 @@ export default function SessionList({ sessions, onRated }: Props) {
                     ~{(s.estimatedTotalTokens / 1000).toFixed(1)}k
                   </td>
                   <td className="py-2.5 text-right text-gray-500 text-xs whitespace-nowrap">
-                    {fmtDuration(s.durationMinutes)}
+                    <div>{fmtDuration(s.durationMinutes)}</div>
+                    <div className="text-[10px] text-gray-400">active {fmtDuration(s.activeMinutes)}</div>
                   </td>
                   <td className="py-2.5">
                     <div className="flex flex-wrap gap-1 max-w-[160px]">

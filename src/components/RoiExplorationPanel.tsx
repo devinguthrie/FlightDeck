@@ -51,6 +51,7 @@ interface Props {
   cycleAssistantTurns: number;
   cycleToolCalls: number;
   cycleDurationMinutes: number;
+  cycleActiveMinutes: number;
   premiumBurnPerUserPrompt: number | null;
   toolOverheadRatio: number;
   promptEfficiencyPer100Turns: number | null;
@@ -180,6 +181,7 @@ export default function RoiExplorationPanel({
   cycleAssistantTurns,
   cycleToolCalls,
   cycleDurationMinutes,
+  cycleActiveMinutes,
   premiumBurnPerUserPrompt,
   toolOverheadRatio,
   promptEfficiencyPer100Turns,
@@ -189,6 +191,7 @@ export default function RoiExplorationPanel({
   totalRated,
   skillStats,
 }: Props) {
+  const hasQualitySignal = totalRated >= 5;
   const trustScore = trustScoreFromAge(quotaAgeMinutes);
   const [now] = useState(() => Date.now());
   const latestBilledPremium =
@@ -344,11 +347,13 @@ export default function RoiExplorationPanel({
   // ─── Top skills by quality efficiency ─────────────────────────────────────
   const topSkillsByEfficiency = useMemo(
     () =>
-      [...skillStats]
-        .filter((s) => s.qualityPer100Req !== null && s.sampleSize >= 2)
-        .sort((a, b) => (b.qualityPer100Req ?? 0) - (a.qualityPer100Req ?? 0))
-        .slice(0, 4),
-    [skillStats]
+      hasQualitySignal
+        ? [...skillStats]
+            .filter((s) => s.qualityPer100Req !== null && s.sampleSize >= 2)
+            .sort((a, b) => (b.qualityPer100Req ?? 0) - (a.qualityPer100Req ?? 0))
+            .slice(0, 4)
+        : [],
+    [hasQualitySignal, skillStats]
   );
 
   const [trendWindow, setTrendWindow] = useState<TimeWindow>("24h");
@@ -422,8 +427,8 @@ export default function RoiExplorationPanel({
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
         <span className="font-medium text-slate-800">Live now:</span> premium burn, work depth, quota trust, and trend analysis.
-        {totalRated === 0 ? (
-          <span> Quality-based ROI is waiting on your first session ratings.</span>
+        {!hasQualitySignal ? (
+          <span> Quality-based ROI stays muted until at least 5 sessions are rated.</span>
         ) : (
           <span> Quality ROI active from {totalRated} rated session{totalRated === 1 ? "" : "s"}.</span>
         )}
@@ -476,8 +481,8 @@ export default function RoiExplorationPanel({
           />
           <Metric
             label="Prompt Efficiency"
-            value={promptEfficiencyPer100Turns !== null ? promptEfficiencyPer100Turns.toFixed(2) : "-"}
-            sub="quality pts per 100 user turns"
+            value={hasQualitySignal && promptEfficiencyPer100Turns !== null ? promptEfficiencyPer100Turns.toFixed(2) : "-"}
+            sub={hasQualitySignal ? "quality pts per 100 user turns" : "needs 5+ rated sessions"}
           />
           <Metric
             label="Quota Trust"
@@ -539,7 +544,7 @@ export default function RoiExplorationPanel({
                 ))}
               </div>
               <p className="text-[11px] text-green-500 mt-2">
-                These skills appear most often on your highest turns/premium days.
+                Recognized workflow skills that appear most often on your highest turns/premium days.
               </p>
             </div>
           )}
@@ -832,34 +837,43 @@ export default function RoiExplorationPanel({
           Quality analysis (marginal returns + correlation)
         </summary>
         <div className="p-3">
+          {!hasQualitySignal && (
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Quality analysis is hidden until 5 sessions are rated. Below that, correlation and marginal-return claims are too easy to overread.
+            </div>
+          )}
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
             Marginal quality gain curve
           </p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={marginalQualityCurve} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 5]} tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-              <Tooltip
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                formatter={(value: number, name: string) => {
-                  if (name === "avgQuality") return [value?.toFixed(2), "Avg Quality"];
-                  if (name === "sessions") return [value, "Rated Sessions"];
-                  return [value, name];
-                }}
-              />
-              <Bar dataKey="avgQuality" name="avgQuality" fill="#10b981" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          <p className="text-[11px] text-gray-500 mt-1">
-            {correlationLabel}
-            {qualityToolOverheadCorrelation !== null && (
-              <span className="ml-1">(corr={qualityToolOverheadCorrelation.toFixed(3)})</span>
-            )}
-          </p>
-          {marginalQualityCurve.every((b) => b.sessions === 0) && (
-            <p className="text-[11px] text-gray-400 mt-1">Rate sessions to activate quality metrics.</p>
-          )}
+          {hasQualitySignal ? (
+            <>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={marginalQualityCurve} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 5]} tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                    formatter={(value: number, name: string) => {
+                      if (name === "avgQuality") return [value?.toFixed(2), "Avg Quality"];
+                      if (name === "sessions") return [value, "Rated Sessions"];
+                      return [value, name];
+                    }}
+                  />
+                  <Bar dataKey="avgQuality" name="avgQuality" fill="#10b981" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <p className="text-[11px] text-gray-500 mt-1">
+                {correlationLabel}
+                {qualityToolOverheadCorrelation !== null && (
+                  <span className="ml-1">(corr={qualityToolOverheadCorrelation.toFixed(3)})</span>
+                )}
+              </p>
+              {marginalQualityCurve.every((b) => b.sessions === 0) && (
+                <p className="text-[11px] text-gray-400 mt-1">Rate sessions to activate quality metrics.</p>
+              )}
+            </>
+          ) : null}
         </div>
       </details>
 
@@ -868,11 +882,15 @@ export default function RoiExplorationPanel({
         <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
           Raw cycle stats
         </summary>
+        <p className="px-3 pb-1 text-[11px] text-gray-400">
+          Active minutes cap idle gaps at 5 minutes. Open-span minutes still show how long sessions stayed open.
+        </p>
         <div className="p-3 grid grid-cols-2 xl:grid-cols-4 gap-3">
           <StatRow label="Cycle user turns" value={cycleUserTurns.toLocaleString()} />
           <StatRow label="Cycle assistant turns" value={cycleAssistantTurns.toLocaleString()} />
           <StatRow label="Cycle tool calls" value={cycleToolCalls.toLocaleString()} />
-          <StatRow label="Cycle minutes" value={cycleDurationMinutes.toFixed(1)} />
+          <StatRow label="Active minutes" value={cycleActiveMinutes?.toFixed(1) ?? "-"} />
+          <StatRow label="Open-span minutes" value={cycleDurationMinutes.toFixed(1)} />
         </div>
       </details>
     </div>

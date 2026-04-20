@@ -92,6 +92,7 @@ export interface StatsResponse {
   cycleAssistantTurns: number;
   cycleToolCalls: number;
   cycleDurationMinutes: number;
+  cycleActiveMinutes: number;
   premiumBurnPerUserPrompt: number | null;
   requestDensityPerMinute: number;
   toolOverheadRatio: number;
@@ -207,12 +208,16 @@ export function computeStats(
     (sum, s) => sum + s.durationMinutes,
     0
   );
+  const cycleActiveMinutes = cycleSessions.reduce(
+    (sum, s) => sum + (s.activeMinutes ?? s.durationMinutes),
+    0
+  );
   const planQuota = plan.premiumRequestsPerMonth + config.additionalRequests;
   const requestsRemaining = Math.max(0, planQuota - requestsThisCycle);
   const premiumBurnPerUserPrompt =
     cycleUserTurns > 0 ? requestsThisCycle / cycleUserTurns : null;
   const requestDensityPerMinute =
-    cycleDurationMinutes > 0 ? cycleAssistantTurns / cycleDurationMinutes : 0;
+    cycleActiveMinutes > 0 ? cycleAssistantTurns / cycleActiveMinutes : 0;
   const toolOverheadRatio =
     cycleAssistantTurns > 0 ? cycleToolCalls / cycleAssistantTurns : 0;
 
@@ -592,6 +597,7 @@ export function computeStats(
     cycleAssistantTurns,
     cycleToolCalls,
     cycleDurationMinutes: Math.round(cycleDurationMinutes * 10) / 10,
+    cycleActiveMinutes: Math.round(cycleActiveMinutes * 10) / 10,
     premiumBurnPerUserPrompt:
       premiumBurnPerUserPrompt !== null
         ? Math.round(premiumBurnPerUserPrompt * 1000) / 1000

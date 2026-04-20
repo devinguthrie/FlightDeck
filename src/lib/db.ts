@@ -56,7 +56,6 @@ const LEGACY_SNAPSHOTS_FILE = path.join(
 
 const g = globalThis as typeof globalThis & {
   _flightdeckDb?: Database.Database;
-  _flightdeckDbColumnsMigrated?: boolean;
 };
 
 export function getDb(): Database.Database {
@@ -76,12 +75,9 @@ export function getDb(): Database.Database {
     g._flightdeckDb = db;
   }
 
-  // Run column migrations on every getDb() call until confirmed applied.
+  // Run column migrations on every getDb() call.
   // Safe to call repeatedly — ALTER TABLE errors for existing columns are caught.
-  if (!g._flightdeckDbColumnsMigrated) {
-    migrateSessionColumns(g._flightdeckDb);
-    g._flightdeckDbColumnsMigrated = true;
-  }
+  migrateSessionColumns(g._flightdeckDb);
 
   return g._flightdeckDb;
 }
@@ -97,6 +93,7 @@ function applySchema(db: Database.Database): void {
       started_at              TEXT NOT NULL,
       ended_at                TEXT NOT NULL,
       duration_minutes        REAL NOT NULL DEFAULT 0,
+      active_minutes          REAL NOT NULL DEFAULT 0,
       user_turns              INTEGER NOT NULL DEFAULT 0,
       assistant_turns         INTEGER NOT NULL DEFAULT 0,
       tool_calls_total        INTEGER NOT NULL DEFAULT 0,
@@ -159,15 +156,24 @@ function applySchema(db: Database.Database): void {
  * before tool_latency_ms and context_saturation were added to the schema.
  */
 function migrateSessionColumns(db: Database.Database): void {
-  const addIfMissing = (col: string, def: string) => {
+  const addIfMissing = (col: string, def: string): boolean => {
     try {
       db.exec(`ALTER TABLE sessions ADD COLUMN ${col} ${def}`);
+      return true;
     } catch {
       // Column already exists — ignore
+      return false;
     }
   };
   addIfMissing("tool_latency_ms", "TEXT NOT NULL DEFAULT '{}'");
   addIfMissing("context_saturation", "REAL NOT NULL DEFAULT 0");
+  const addedActiveMinutes = addIfMissing("active_minutes", "REAL NOT NULL DEFAULT 0");
+
+  if (addedActiveMinutes) {
+    db.prepare(
+      "DELETE FROM ingested_files WHERE file_path LIKE ?"
+    ).run("%GitHub.copilot-chat%");
+  }
 }
 
 function migrateRatingsFromJson(db: Database.Database): void {
@@ -267,12 +273,12 @@ function syncSessions(): void {
   const upsertSession = db.prepare(
     `INSERT OR REPLACE INTO sessions
        (session_id, workspace_hash, workspace_name, started_at, ended_at,
-        duration_minutes, user_turns, assistant_turns, tool_calls_total,
+        duration_minutes, active_minutes, user_turns, assistant_turns, tool_calls_total,
         tool_calls_by_name, skills_activated,
         estimated_input_tokens, estimated_output_tokens, estimated_total_tokens,
         premium_requests, raw_path, copilot_version, vs_code_version,
         tool_latency_ms, context_saturation)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const sync = db.transaction(() => {
@@ -309,6 +315,7 @@ function syncSessions(): void {
           session.startedAt,
           session.endedAt,
           session.durationMinutes,
+          session.activeMinutes,
           session.userTurns,
           session.assistantTurns,
           session.toolCallsTotal,
@@ -340,6 +347,7 @@ function rowToSession(row: Record<string, unknown>): ParsedSession {
     startedAt: row.started_at as string,
     endedAt: row.ended_at as string,
     durationMinutes: row.duration_minutes as number,
+    activeMinutes: (row.active_minutes as number) ?? (row.duration_minutes as number),
     userTurns: row.user_turns as number,
     assistantTurns: row.assistant_turns as number,
     toolCallsTotal: row.tool_calls_total as number,

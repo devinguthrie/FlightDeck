@@ -35,6 +35,7 @@ export function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSessi
     startedAt,
     endedAt,
     durationMinutes: overrides.durationMinutes ?? 30,
+    activeMinutes: overrides.activeMinutes ?? overrides.durationMinutes ?? 30,
     userTurns: overrides.userTurns ?? 5,
     assistantTurns: overrides.assistantTurns ?? premiumRequests,
     toolCallsTotal: overrides.toolCallsTotal ?? premiumRequests * 3,

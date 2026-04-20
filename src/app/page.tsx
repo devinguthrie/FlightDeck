@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ActivityTimeline from "@/components/ActivityTimeline";
+import DivergencePanel from "@/components/DivergencePanel";
 import ProjectionChart from "@/components/ProjectionChart";
 import QuotaChart from "@/components/QuotaChart";
 import RoiExplorationPanel from "@/components/RoiExplorationPanel";
@@ -55,6 +56,7 @@ interface StatsData {
   cycleAssistantTurns: number;
   cycleToolCalls: number;
   cycleDurationMinutes: number;
+  cycleActiveMinutes: number;
   premiumBurnPerUserPrompt: number | null;
   requestDensityPerMinute: number;
   toolOverheadRatio: number;
@@ -144,6 +146,7 @@ interface Session {
   startedAt: string;
   endedAt: string;
   durationMinutes: number;
+  activeMinutes: number;
   premiumRequests: number;
   toolCallsTotal: number;
   skillsActivated: string[];
@@ -284,6 +287,16 @@ export default function Dashboard() {
       // Extension not yet installed — ignore
     }
   }, []);
+
+  // Auto-refresh every 5 minutes - silent, same as the refresh button
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadStats();
+      loadSessions();
+      loadQuota();
+    }, 300000);
+    return () => clearInterval(interval);
+  }, [loadStats, loadSessions, loadQuota]);
 
   useEffect(() => {
     setLoading(true);
@@ -665,13 +678,13 @@ export default function Dashboard() {
             color="green"
           />
           <KpiCard
-            label="Avg Context Depth"
+            label="Est. Transcript Context"
             value={
               stats.avgContextSaturation !== null
                 ? `${(stats.avgContextSaturation * 100).toFixed(1)}%`
                 : "No data"
             }
-            sub={`Estimated % of 128k context window filled per session`}
+            sub={`Transcript-only estimate of 128k context usage; system prompts and file context are missing, so this undercounts true context`}
             color="amber"
             progress={stats.avgContextSaturation ?? undefined}
           />
@@ -707,6 +720,7 @@ export default function Dashboard() {
           cycleAssistantTurns={stats.cycleAssistantTurns}
           cycleToolCalls={stats.cycleToolCalls}
           cycleDurationMinutes={stats.cycleDurationMinutes}
+          cycleActiveMinutes={stats.cycleActiveMinutes}
           premiumBurnPerUserPrompt={stats.premiumBurnPerUserPrompt}
           toolOverheadRatio={stats.toolOverheadRatio}
           promptEfficiencyPer100Turns={stats.promptEfficiencyPer100Turns}
@@ -715,6 +729,12 @@ export default function Dashboard() {
           quotaAgeMinutes={quota?.ageMinutes ?? null}
           totalRated={stats.totalRated}
           skillStats={stats.skillStats}
+        />
+
+        <DivergencePanel
+          dailyBuckets={stats.dailyBuckets}
+          quotaTimeSeries={quota?.timeSeries ?? []}
+          projectScopedComparison={selectedWorkspace !== null}
         />
 
         {/* Charts */}
@@ -755,7 +775,7 @@ export default function Dashboard() {
           confidenceLabel={projectionConfidenceLabel}
         />
 
-        <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} />
+        <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} totalRated={stats.totalRated} />
 
         <TokenVolumeChart
           dailyBuckets={stats.dailyBuckets}

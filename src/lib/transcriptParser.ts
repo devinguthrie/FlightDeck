@@ -4,6 +4,7 @@ import os from "os";
 
 /** Copilot models max context window (128k tokens). Used for saturation estimate. */
 export const COPILOT_CONTEXT_LIMIT_TOKENS = 128_000;
+const ACTIVE_GAP_CAP_MS = 5 * 60_000;
 
 export interface ParsedSession {
   sessionId: string;
@@ -12,6 +13,7 @@ export interface ParsedSession {
   startedAt: string; // ISO string
   endedAt: string;   // ISO string
   durationMinutes: number;
+  activeMinutes: number;
   userTurns: number;
   assistantTurns: number;
   toolCallsTotal: number;
@@ -47,6 +49,52 @@ interface TranscriptEvent {
 /** Rough 4-chars-per-token approximation. Reliable for trends, not accounting. */
 function estimateTokens(text: string): number {
   return Math.ceil((text ?? "").length / 4);
+}
+
+/**
+ * Only treat reads from known skill registries as workflow skills.
+ * This avoids polluting skill stats with arbitrary repo docs named SKILL.md.
+ */
+function extractRecognizedSkillName(filePath: string): string | null {
+  const normalized = filePath.replace(/\\/g, "/");
+  const patterns = [
+    /\.claude\/skills\/([^/]+)\/SKILL\.md$/i,
+    /\.agents\/skills\/([^/]+)\/SKILL\.md$/i,
+    /\.copilot-plugins\/[^/]+\/plugins\/([^/]+)\/SKILL\.md$/i,
+    /\.vscode\/extensions\/[^/]+\/resources\/skills\/([^/]+)\/SKILL\.md$/i,
+    /resources\/app\/extensions\/copilot\/assets\/prompts\/skills\/([^/]+)\/SKILL\.md$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+function computeActiveMinutes(startedAt: string, events: TranscriptEvent[]): number {
+  if (events.length === 0) return 0;
+
+  const timestamps = events
+    .map((event) => new Date(event.timestamp).getTime())
+    .filter((ts) => Number.isFinite(ts))
+    .sort((a, b) => a - b);
+
+  if (timestamps.length === 0) return 0;
+
+  let activeMs = 0;
+  let prev = new Date(startedAt).getTime();
+
+  for (const ts of timestamps) {
+    const gap = ts - prev;
+    if (gap > 0) {
+      activeMs += Math.min(gap, ACTIVE_GAP_CAP_MS);
+      prev = ts;
+    }
+  }
+
+  return Math.max(0, activeMs / 60000);
 }
 
 /** Try to resolve a human-readable name for a workspaceStorage hash directory. */
@@ -172,10 +220,8 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
           (args.path as string) ??
           (args.file_path as string) ??
           "";
-        const skillMatch = filePath.match(
-          /skills[/\\]([^/\\]+)[/\\]SKILL\.md$/i
-        );
-        if (skillMatch) skillsActivated.add(skillMatch[1]);
+        const skillName = extractRecognizedSkillName(filePath);
+        if (skillName) skillsActivated.add(skillName);
         break;
       }
       case "tool.execution_complete": {
@@ -202,6 +248,7 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
   const startMs = new Date(startedAt).getTime();
   const endMs = new Date(lastTimestamp).getTime();
   const durationMinutes = Math.max(0, (endMs - startMs) / 60000);
+  const activeMinutes = computeActiveMinutes(startedAt, events);
 
   // Extract workspace hash from the file path
   // Path: .../workspaceStorage/{hash}/GitHub.copilot-chat/transcripts/...
@@ -234,6 +281,7 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
     startedAt,
     endedAt: lastTimestamp,
     durationMinutes,
+    activeMinutes,
     userTurns,
     assistantTurns,
     toolCallsTotal,
