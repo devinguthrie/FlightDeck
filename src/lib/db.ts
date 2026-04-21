@@ -78,6 +78,8 @@ export function getDb(): Database.Database {
   // Run column migrations on every getDb() call.
   // Safe to call repeatedly — ALTER TABLE errors for existing columns are caught.
   migrateSessionColumns(g._flightdeckDb);
+  migrateProxyRequestColumns(g._flightdeckDb);
+  migrateQuotaSnapshotColumns(g._flightdeckDb);
 
   return g._flightdeckDb;
 }
@@ -123,7 +125,10 @@ function applySchema(db: Database.Database): void {
       completions_entitlement INTEGER NOT NULL DEFAULT 0,
       completions_remaining   INTEGER NOT NULL DEFAULT 0,
       premium_entitlement     INTEGER NOT NULL DEFAULT 0,
-      premium_remaining       INTEGER NOT NULL DEFAULT 0
+      premium_remaining       INTEGER NOT NULL DEFAULT 0,
+      api_rate_limit_limit    INTEGER,
+      api_rate_limit_remaining INTEGER,
+      api_rate_limit_reset_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS ratings (
@@ -135,14 +140,30 @@ function applySchema(db: Database.Database): void {
     );
 
     CREATE TABLE IF NOT EXISTS proxy_requests (
-      id                INTEGER PRIMARY KEY AUTOINCREMENT,
-      ts                TEXT NOT NULL,
-      model             TEXT NOT NULL DEFAULT '',
-      prompt_tokens     INTEGER,
-      completion_tokens INTEGER,
-      total_tokens      INTEGER,
-      latency_ms        INTEGER NOT NULL DEFAULT 0,
-      source            TEXT NOT NULL DEFAULT 'unknown'
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts                    TEXT NOT NULL,
+      model                 TEXT NOT NULL DEFAULT '',
+      prompt_tokens         INTEGER,
+      completion_tokens     INTEGER,
+      total_tokens          INTEGER,
+      latency_ms            INTEGER NOT NULL DEFAULT 0,
+      source                TEXT NOT NULL DEFAULT 'unknown',
+      rate_limit_limit      INTEGER,
+      rate_limit_remaining  INTEGER,
+      rate_limit_reset_at   TEXT,
+      error_code            TEXT,
+      error_message         TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS model_limits (
+      model_name            TEXT PRIMARY KEY,
+      context_window_tokens INTEGER NOT NULL,
+      max_output_tokens     INTEGER,
+      requests_per_minute   INTEGER,
+      concurrent_requests   INTEGER,
+      discovered_at         TEXT NOT NULL,
+      last_updated_at       TEXT NOT NULL,
+      source                TEXT NOT NULL DEFAULT 'api'
     );
 
     CREATE INDEX IF NOT EXISTS idx_proxy_requests_ts ON proxy_requests (ts);
@@ -174,6 +195,38 @@ function migrateSessionColumns(db: Database.Database): void {
       "DELETE FROM ingested_files WHERE file_path LIKE ?"
     ).run("%GitHub.copilot-chat%");
   }
+}
+
+function migrateProxyRequestColumns(db: Database.Database): void {
+  const addIfMissing = (col: string, def: string): boolean => {
+    try {
+      db.exec(`ALTER TABLE proxy_requests ADD COLUMN ${col} ${def}`);
+      return true;
+    } catch {
+      // Column already exists — ignore
+      return false;
+    }
+  };
+  addIfMissing("rate_limit_limit", "INTEGER");
+  addIfMissing("rate_limit_remaining", "INTEGER");
+  addIfMissing("rate_limit_reset_at", "TEXT");
+  addIfMissing("error_code", "TEXT");
+  addIfMissing("error_message", "TEXT");
+}
+
+function migrateQuotaSnapshotColumns(db: Database.Database): void {
+  const addIfMissing = (col: string, def: string): boolean => {
+    try {
+      db.exec(`ALTER TABLE quota_snapshots ADD COLUMN ${col} ${def}`);
+      return true;
+    } catch {
+      // Column already exists — ignore
+      return false;
+    }
+  };
+  addIfMissing("api_rate_limit_limit", "INTEGER");
+  addIfMissing("api_rate_limit_remaining", "INTEGER");
+  addIfMissing("api_rate_limit_reset_at", "TEXT");
 }
 
 function migrateRatingsFromJson(db: Database.Database): void {
@@ -511,8 +564,8 @@ function syncProxyRequests(): void {
   if (newRecords.length === 0) return;
 
   const insert = db.prepare(
-    `INSERT INTO proxy_requests (ts, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO proxy_requests (ts, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, source, rate_limit_limit, rate_limit_remaining, rate_limit_reset_at, error_code, error_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const tx = db.transaction(() => {
     if (startIdx === 0) {
@@ -520,7 +573,7 @@ function syncProxyRequests(): void {
       db.prepare("DELETE FROM proxy_requests").run();
     }
     for (const r of newRecords) {
-      insert.run(r.ts, r.model, r.promptTokens, r.completionTokens, r.totalTokens, r.latencyMs, r.source);
+      insert.run(r.ts, r.model, r.promptTokens, r.completionTokens, r.totalTokens, r.latencyMs, r.source, r.rateLimitLimit, r.rateLimitRemaining, r.rateLimitResetAt, r.errorCode, r.errorMessage);
     }
     db.prepare(
       "INSERT OR REPLACE INTO ingested_files (file_path, mtime, parsed) VALUES (?, ?, ?)"
@@ -534,7 +587,7 @@ export function getAllProxyRequestsFromDb(): ProxyRequest[] {
   const db = getDb();
   const rows = db
     .prepare(
-      "SELECT ts, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, source FROM proxy_requests ORDER BY ts ASC"
+      "SELECT ts, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, source, rate_limit_limit, rate_limit_remaining, rate_limit_reset_at, error_code, error_message FROM proxy_requests ORDER BY ts ASC"
     )
     .all() as Array<{
       ts: string;
@@ -544,6 +597,11 @@ export function getAllProxyRequestsFromDb(): ProxyRequest[] {
       total_tokens: number | null;
       latency_ms: number;
       source: string;
+      rate_limit_limit: number | null;
+      rate_limit_remaining: number | null;
+      rate_limit_reset_at: string | null;
+      error_code: string | null;
+      error_message: string | null;
     }>;
   return rows.map((r) => ({
     ts: r.ts,
@@ -553,6 +611,11 @@ export function getAllProxyRequestsFromDb(): ProxyRequest[] {
     totalTokens: r.total_tokens,
     latencyMs: r.latency_ms,
     source: r.source === "vscode" || r.source === "cli" ? r.source : "unknown",
+    rateLimitLimit: r.rate_limit_limit,
+    rateLimitRemaining: r.rate_limit_remaining,
+    rateLimitResetAt: r.rate_limit_reset_at,
+    errorCode: r.error_code,
+    errorMessage: r.error_message,
   }));
 }
 
@@ -571,4 +634,142 @@ export function getAllRatingsFromDb(): Record<string, QualityRating> {
     };
   }
   return result;
+}
+
+// ─── Model Limits ─────────────────────────────────────────────────────────────
+
+export interface ModelLimit {
+  modelName: string;
+  contextWindowTokens: number;
+  maxOutputTokens: number | null;
+  requestsPerMinute: number | null;
+  concurrentRequests: number | null;
+  discoveredAt: string;
+  lastUpdatedAt: string;
+  source: string;
+}
+
+/**
+ * Upsert a model limit record. Call this when you discover model constraints.
+ * Example: GitHub Copilot API returns 400 "context window exceeded" → record that limit.
+ */
+export function upsertModelLimit(limit: Omit<ModelLimit, "discoveredAt" | "lastUpdatedAt">): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR REPLACE INTO model_limits
+       (model_name, context_window_tokens, max_output_tokens, requests_per_minute, concurrent_requests, discovered_at, last_updated_at, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    limit.modelName,
+    limit.contextWindowTokens,
+    limit.maxOutputTokens ?? null,
+    limit.requestsPerMinute ?? null,
+    limit.concurrentRequests ?? null,
+    now,
+    now,
+    limit.source || "api"
+  );
+}
+
+/**
+ * Get all model limits discovered so far.
+ */
+export function getModelLimitsFromDb(): ModelLimit[] {
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM model_limits ORDER BY model_name ASC")
+    .all() as Record<string, unknown>[];
+  return rows.map((r) => ({
+    modelName: r.model_name as string,
+    contextWindowTokens: r.context_window_tokens as number,
+    maxOutputTokens: r.max_output_tokens as number | null,
+    requestsPerMinute: r.requests_per_minute as number | null,
+    concurrentRequests: r.concurrent_requests as number | null,
+    discoveredAt: r.discovered_at as string,
+    lastUpdatedAt: r.last_updated_at as string,
+    source: r.source as string,
+  }));
+}
+
+/**
+ * Get a specific model's limits, or null if not recorded.
+ */
+export function getModelLimit(modelName: string): ModelLimit | null {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT * FROM model_limits WHERE model_name = ?")
+    .get(modelName) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    modelName: row.model_name as string,
+    contextWindowTokens: row.context_window_tokens as number,
+    maxOutputTokens: row.max_output_tokens as number | null,
+    requestsPerMinute: row.requests_per_minute as number | null,
+    concurrentRequests: row.concurrent_requests as number | null,
+    discoveredAt: row.discovered_at as string,
+    lastUpdatedAt: row.last_updated_at as string,
+    source: row.source as string,
+  };
+}
+
+/**
+ * Record a rate limit event on a proxy request (e.g., 429 Too Many Requests).
+ * Updates the proxy_requests table with rate limit info and error details.
+ */
+export function recordProxyRequestWithRateLimit(
+  ts: string,
+  model: string,
+  promptTokens: number | null,
+  completionTokens: number | null,
+  totalTokens: number | null,
+  latencyMs: number,
+  source: "vscode" | "cli" | "unknown",
+  rateLimitLimit: number | null,
+  rateLimitRemaining: number | null,
+  rateLimitResetAt: string | null,
+  errorCode: string | null,
+  errorMessage: string | null
+): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO proxy_requests
+       (ts, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, source,
+        rate_limit_limit, rate_limit_remaining, rate_limit_reset_at, error_code, error_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    ts, model, promptTokens, completionTokens, totalTokens, latencyMs, source,
+    rateLimitLimit, rateLimitRemaining, rateLimitResetAt, errorCode, errorMessage
+  );
+}
+
+/**
+ * Get recent rate limit errors (last 7 days).
+ */
+export function getRecentRateLimitErrors(): Array<{
+  ts: string;
+  model: string;
+  errorCode: string;
+  errorMessage: string;
+  rateLimitRemaining: number | null;
+  rateLimitReset: string | null;
+}> {
+  const db = getDb();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare(
+      `SELECT ts, model, error_code, error_message, rate_limit_remaining, rate_limit_reset_at
+       FROM proxy_requests
+       WHERE error_code IS NOT NULL AND ts > ?
+       ORDER BY ts DESC`
+    )
+    .all(sevenDaysAgo) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    ts: r.ts as string,
+    model: r.model as string,
+    errorCode: r.error_code as string,
+    errorMessage: r.error_message as string,
+    rateLimitRemaining: r.rate_limit_remaining as number | null,
+    rateLimitReset: r.rate_limit_reset_at as string | null,
+  }));
 }

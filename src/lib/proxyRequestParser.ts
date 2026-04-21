@@ -10,6 +10,11 @@ export interface ProxyRequest {
   totalTokens: number | null;
   latencyMs: number;
   source: "vscode" | "cli" | "unknown";
+  rateLimitLimit: number | null;
+  rateLimitRemaining: number | null;
+  rateLimitResetAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
 }
 
 export const PROXY_JSONL_PATH = path.join(os.homedir(), ".ai-usage", "proxy-requests.jsonl");
@@ -36,6 +41,11 @@ export function readProxyRequestsFromDisk(): ProxyRequest[] {
         total_tokens?: number | null;
         latency_ms?: number;
         source?: string;
+        rate_limit_limit?: number | null;
+        rate_limit_remaining?: number | null;
+        rate_limit_reset_at?: string | null;
+        error_code?: string | null;
+        error_message?: string | null;
       };
       const src = raw.source;
       records.push({
@@ -46,6 +56,11 @@ export function readProxyRequestsFromDisk(): ProxyRequest[] {
         totalTokens: raw.total_tokens ?? null,
         latencyMs: raw.latency_ms ?? 0,
         source: src === "vscode" || src === "cli" ? src : "unknown",
+        rateLimitLimit: raw.rate_limit_limit ?? null,
+        rateLimitRemaining: raw.rate_limit_remaining ?? null,
+        rateLimitResetAt: raw.rate_limit_reset_at ?? null,
+        errorCode: raw.error_code ?? null,
+        errorMessage: raw.error_message ?? null,
       });
     } catch {
       // Skip malformed / partial lines

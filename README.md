@@ -26,6 +26,15 @@ FlightDeck combines two local sources that measure different things:
 
 Transcript counts and billed quota are tracked separately on purpose. When they diverge, that is signal.
 
+### Model Limits & Rate Limiting
+
+FlightDeck also tracks API constraints and rate limit events:
+- **Model Constraints**: Context window, max output tokens, requests per minute, concurrent request limits
+- **Rate Limit Events**: Automatic tracking when API returns 429 (Too Many Requests) or context overflow errors
+- **Error Details**: Captures HTTP error codes, messages, and rate limit headers from API responses
+
+These constraints are discovered automatically from API responses and can be manually recorded. This helps identify when heavy workload sessions hit platform limits.
+
 ## Screenshots
 
 ### Quota Consumption + Transcript Activity

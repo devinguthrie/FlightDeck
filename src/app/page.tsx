@@ -10,6 +10,7 @@ import ToolBreakdown from "@/components/ToolBreakdown";
 import SessionList from "@/components/SessionList";
 import ConfigPanel from "@/components/ConfigPanel";
 import TokenVolumeChart from "@/components/TokenVolumeChart";
+import { ModelLimitsPanel } from "@/components/ModelLimitsPanel";
 import type { PlanKey } from "@/lib/pricing";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -898,6 +899,9 @@ export default function Dashboard() {
             loadStats();
           }}
         />
+
+        {/* Model Limits and Rate Limiting */}
+        <ModelLimitsPanel />
       </main>
     </div>
   );

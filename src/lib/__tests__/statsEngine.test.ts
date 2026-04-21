@@ -655,6 +655,11 @@ describe("token volume metrics", () => {
       totalTokens: prompt + completion,
       latencyMs: 1000,
       source: "cli" as const,
+      rateLimitLimit: null,
+      rateLimitRemaining: null,
+      rateLimitResetAt: null,
+      errorCode: null,
+      errorMessage: null,
     });
     const result = computeStats(
       THREE_MONTH_SESSIONS,
