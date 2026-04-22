@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import DivergencePanel from "@/components/DivergencePanel";
 import ProjectionChart from "@/components/ProjectionChart";
-import QuotaChart from "@/components/QuotaChart";
 import RoiExplorationPanel from "@/components/RoiExplorationPanel";
 import ToolBreakdown from "@/components/ToolBreakdown";
 import SessionList from "@/components/SessionList";
@@ -849,21 +848,6 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="space-y-4">
-            {quota?.available && (
-              <CollapsibleModule title="Quota Consumption">
-                <QuotaChart
-                  embedded
-                  hideTitle
-                  timeSeries={quota.timeSeries}
-                  chatEntitlement={quota.chatEntitlement}
-                  completionsEntitlement={quota.completionsEntitlement}
-                  premiumEntitlement={quota.premiumEntitlement}
-                  ageMinutes={quota.ageMinutes}
-                  quotaResetDate={quota.quotaResetDate}
-                />
-              </CollapsibleModule>
-            )}
-
             <CollapsibleModule title="Premium Usage Projection">
               <ProjectionChart
                 embedded
@@ -887,12 +871,16 @@ export default function Dashboard() {
               />
             </CollapsibleModule>
 
-            <CollapsibleModule title="ROI Exploration">
+            <CollapsibleModule title="Premium Calls & ROI">
               <RoiExplorationPanel
                 embedded
                 hideTitle
                 dailyBuckets={stats.dailyBuckets}
                 quotaTimeSeries={quota?.timeSeries ?? []}
+                chatEntitlement={quota?.chatEntitlement ?? null}
+                completionsEntitlement={quota?.completionsEntitlement ?? null}
+                premiumEntitlement={quota?.premiumEntitlement ?? null}
+                quotaResetDate={quota?.quotaResetDate ?? null}
                 intradayBuckets={stats.intradayBuckets}
                 cycleUserTurns={stats.cycleUserTurns}
                 cycleAssistantTurns={stats.cycleAssistantTurns}
