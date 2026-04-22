@@ -60,6 +60,8 @@ interface Props {
   quotaAgeMinutes: number | null;
   totalRated: number;
   skillStats: SkillStat[];
+  hideTitle?: boolean;
+  embedded?: boolean;
 }
 
 function trustScoreFromAge(ageMinutes: number | null): number {
@@ -190,6 +192,8 @@ export default function RoiExplorationPanel({
   quotaAgeMinutes,
   totalRated,
   skillStats,
+  hideTitle = false,
+  embedded = false,
 }: Props) {
   const hasQualitySignal = totalRated >= 5;
   const trustScore = trustScoreFromAge(quotaAgeMinutes);
@@ -250,28 +254,6 @@ export default function RoiExplorationPanel({
     [premiumTrend]
   );
 
-  // ─── Session depth vs efficiency ──────────────────────────────────────────
-  const depthEfficiency = useMemo(() => {
-    const buckets = [
-      { label: "1–10 req/session", min: 1, max: 10 },
-      { label: "11–30 req/session", min: 11, max: 30 },
-      { label: "31–60 req/session", min: 31, max: 60 },
-      { label: "61+ req/session", min: 61, max: Infinity },
-    ];
-    return buckets.map((b) => {
-      const days = premiumTrend.filter((d) => {
-        if (d.sessions === 0 || d.turnsPerPremium === null) return false;
-        const avgDepth = d.transcriptTurns / d.sessions;
-        return avgDepth >= b.min && avgDepth <= b.max;
-      });
-      const avgRatio =
-        days.length > 0
-          ? days.reduce((s, d) => s + (d.turnsPerPremium ?? 0), 0) / days.length
-          : null;
-      return { bucket: b.label, days: days.length, avgTurnsPerPremium: avgRatio };
-    });
-  }, [premiumTrend]);
-
   // ─── High-efficiency skill frequency ──────────────────────────────────────
   const skillEfficiencyInsight = useMemo(() => {
     const withRatio = premiumTrend.filter((d) => d.turnsPerPremium !== null);
@@ -323,26 +305,47 @@ export default function RoiExplorationPanel({
     }));
   }, [quotaTimeSeries]);
 
-  // ─── Today's gap stats (always based on last 24h of snapshots) ────────────────────
+  // ─── Today's gap stats (local calendar day, not rolling 24h) ─────────────────────
   const todayStats = useMemo(() => {
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const todayBucket = dailyBuckets.find((d) => d.date === todayKey) ?? null;
-    const todayTurns = todayBucket?.requests ?? null;
-    const cutoff24h = now - 24 * 60 * 60 * 1000;
-    const last24h = intradaySnapshots.filter(
-      (p) => new Date(p.ts).getTime() >= cutoff24h
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayMs = startOfToday.getTime();
+
+    const intradayTodayTurns = intradayBuckets
+      .filter((bucket) => new Date(bucket.hour).getTime() >= startOfTodayMs)
+      .reduce((sum, bucket) => sum + bucket.transcriptTurns, 0);
+
+    const fallbackTodayKey = [
+      startOfToday.getFullYear(),
+      String(startOfToday.getMonth() + 1).padStart(2, "0"),
+      String(startOfToday.getDate()).padStart(2, "0"),
+    ].join("-");
+    const todayBucket = dailyBuckets.find((d) => d.date === fallbackTodayKey) ?? null;
+    const todayTurns =
+      intradayTodayTurns > 0 ? intradayTodayTurns : todayBucket?.requests ?? null;
+
+    const beforeToday = intradaySnapshots.filter(
+      (snapshot) => new Date(snapshot.ts).getTime() < startOfTodayMs
     );
-    const first = last24h[0]?.premiumUsed ?? null;
-    const last =
-      last24h.length > 1 ? last24h[last24h.length - 1].premiumUsed : null;
+    const duringToday = intradaySnapshots.filter(
+      (snapshot) => new Date(snapshot.ts).getTime() >= startOfTodayMs
+    );
+    const baselineSnapshot =
+      beforeToday.length > 0
+        ? beforeToday[beforeToday.length - 1]
+        : duringToday[0] ?? null;
+    const latestTodaySnapshot =
+      duringToday.length > 0 ? duringToday[duringToday.length - 1] : null;
     const todayPremiumDelta =
-      first !== null && last !== null ? Math.max(0, last - first) : null;
+      baselineSnapshot !== null && latestTodaySnapshot !== null
+        ? Math.max(0, latestTodaySnapshot.premiumUsed - baselineSnapshot.premiumUsed)
+        : null;
     const todayRatio =
       todayTurns !== null && todayPremiumDelta !== null && todayPremiumDelta > 0
         ? todayTurns / todayPremiumDelta
         : null;
     return { todayTurns, todayPremiumDelta, todayRatio };
-  }, [dailyBuckets, intradaySnapshots, now]);
+  }, [dailyBuckets, intradayBuckets, intradaySnapshots]);
 
   // ─── Top skills by quality efficiency ─────────────────────────────────────
   const topSkillsByEfficiency = useMemo(
@@ -401,25 +404,16 @@ export default function RoiExplorationPanel({
     }));
   }, [intradaySnapshots, intradayWindow, now]);
 
-  const correlationLabel =
-    qualityToolOverheadCorrelation === null
-      ? "Not enough rated sessions"
-      : qualityToolOverheadCorrelation > 0.2
-      ? "Higher tool overhead correlates with better quality"
-      : qualityToolOverheadCorrelation < -0.2
-      ? "Higher tool overhead correlates with lower quality"
-      : "Tool overhead has weak quality relationship";
-
   const trendPct =
     recent7avg !== null && prev7avg !== null && prev7avg > 0
       ? ((recent7avg - prev7avg) / prev7avg) * 100
       : null;
 
   return (
-    <div className="rounded-lg bg-white border border-gray-200 p-5 space-y-5">
+    <div className={`${embedded ? "bg-white p-5 space-y-5" : "rounded-lg bg-white border border-gray-200 p-5 space-y-5"}`}>
       {/* Header */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">ROI Exploration</h2>
+        {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">ROI Exploration</h2>}
         <p className="text-xs text-gray-500 mt-0.5">
           Transcript turns per billed premium — find what makes the lines diverge
         </p>
@@ -575,7 +569,7 @@ export default function RoiExplorationPanel({
       )}
 
       {/* Live intraday premium burn — collapsible */}
-      <details className="border border-gray-100 rounded-lg">
+      <details open className="border border-gray-100 rounded-lg">
         <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
           Premium calls today (live)
           <span className="ml-2 text-[11px] text-gray-400 font-normal normal-case tracking-normal">
@@ -787,110 +781,6 @@ export default function RoiExplorationPanel({
               ? "Purple = turns/premium · blue = transcript turns · green = billed premium (hourly)"
               : "Purple solid = turns/premium · dashed = 7d MA · blue/green = raw components"}
           </p>
-        </div>
-      </details>
-
-      <details open className="border border-gray-100 rounded-lg">
-        <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
-          Session depth vs efficiency
-        </summary>
-        <div className="p-3">
-          {depthEfficiency.every((b) => b.days === 0) ? (
-            <p className="text-xs text-gray-400 py-8 text-center">
-              Not enough overlap data yet
-            </p>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={depthEfficiency} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis
-                  dataKey="bucket"
-                  tick={{ fontSize: 10, fill: "#6b7280" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                  formatter={(value: unknown, name: string) => {
-                    if (name === "avgTurnsPerPremium") {
-                      const num = Number(value);
-                      return [Number.isFinite(num) ? num.toFixed(2) : "-", "Avg Turns/Premium"] as [string, string];
-                    }
-                    if (name === "days") return [String(value ?? ""), "Days in bucket"] as [string, string];
-                    return [String(value ?? ""), name] as [string, string];
-                  }}
-                />
-                <Bar dataKey="avgTurnsPerPremium" name="avgTurnsPerPremium" fill="#7c3aed" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-          <p className="text-[11px] text-gray-500 mt-1">
-            Avg requests per session bucketed. Taller = better turns/premium ratio on those days.
-          </p>
-        </div>
-      </details>
-
-      {/* Quality analysis — collapsed */}
-      <details className="border border-gray-100 rounded-lg">
-        <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
-          Quality analysis (marginal returns + correlation)
-        </summary>
-        <div className="p-3">
-          {!hasQualitySignal && (
-            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Quality analysis is hidden until 5 sessions are rated. Below that, correlation and marginal-return claims are too easy to overread.
-            </div>
-          )}
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-            Marginal quality gain curve
-          </p>
-          {hasQualitySignal ? (
-            <>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={marginalQualityCurve} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 5]} tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                    formatter={(value: number, name: string) => {
-                      if (name === "avgQuality") return [value?.toFixed(2), "Avg Quality"];
-                      if (name === "sessions") return [value, "Rated Sessions"];
-                      return [value, name];
-                    }}
-                  />
-                  <Bar dataKey="avgQuality" name="avgQuality" fill="#10b981" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-              <p className="text-[11px] text-gray-500 mt-1">
-                {correlationLabel}
-                {qualityToolOverheadCorrelation !== null && (
-                  <span className="ml-1">(corr={qualityToolOverheadCorrelation.toFixed(3)})</span>
-                )}
-              </p>
-              {marginalQualityCurve.every((b) => b.sessions === 0) && (
-                <p className="text-[11px] text-gray-400 mt-1">Rate sessions to activate quality metrics.</p>
-              )}
-            </>
-          ) : null}
-        </div>
-      </details>
-
-      {/* Raw cycle stats — collapsed */}
-      <details className="border border-gray-100 rounded-lg">
-        <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
-          Raw cycle stats
-        </summary>
-        <p className="px-3 pb-1 text-[11px] text-gray-400">
-          Active minutes cap idle gaps at 5 minutes. Open-span minutes still show how long sessions stayed open.
-        </p>
-        <div className="p-3 grid grid-cols-2 xl:grid-cols-4 gap-3">
-          <StatRow label="Cycle user turns" value={cycleUserTurns.toLocaleString()} />
-          <StatRow label="Cycle assistant turns" value={cycleAssistantTurns.toLocaleString()} />
-          <StatRow label="Cycle tool calls" value={cycleToolCalls.toLocaleString()} />
-          <StatRow label="Active minutes" value={cycleActiveMinutes?.toFixed(1) ?? "-"} />
-          <StatRow label="Open-span minutes" value={cycleDurationMinutes.toFixed(1)} />
         </div>
       </details>
     </div>

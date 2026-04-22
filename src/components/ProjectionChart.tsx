@@ -23,7 +23,6 @@ interface ProjectionPoint {
 
 interface Props {
   points: ProjectionPoint[];
-  comparisonPoints?: ProjectionPoint[];
   planQuota: number;
   exhaustionDate: string | null;
   dailyBurnRate: number;
@@ -32,6 +31,8 @@ interface Props {
   sourceLabel?: string;
   coverageDays?: number | null;
   confidenceLabel?: string;
+  hideTitle?: boolean;
+  embedded?: boolean;
 }
 
 const AVG_OPTIONS = [1, 3, 7, 14, 30];
@@ -43,7 +44,6 @@ function fmtDate(dateStr: string): string {
 
 export default function ProjectionChart({
   points,
-  comparisonPoints,
   planQuota,
   exhaustionDate,
   dailyBurnRate,
@@ -52,31 +52,27 @@ export default function ProjectionChart({
   sourceLabel = "Billed premium usage",
   coverageDays = null,
   confidenceLabel,
+  hideTitle = false,
+  embedded = false,
 }: Props) {
-  const [compareMode, setCompareMode] = useState<"single" | "compare">("single");
-
   const chartData = useMemo(() => {
-    const comparisonMap = new Map((comparisonPoints ?? []).map((p) => [p.date, p]));
     return points.map((p) => {
-      const comparison = comparisonMap.get(p.date);
       return {
         ...p,
         label: fmtDate(p.date),
-        comparisonActual: comparison?.actual ?? null,
-        comparisonProjected: comparison?.projected ?? null,
       };
     });
-  }, [points, comparisonPoints]);
-  const chartKey = `${avgDays}-${compareMode}-${chartData.length}-${planQuota}`;
+  }, [points]);
+  const chartKey = `${avgDays}-${chartData.length}-${planQuota}`;
 
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   return (
-    <div className="rounded-lg bg-white border border-gray-200 p-5">
+    <div className={`${embedded ? "bg-white p-5" : "rounded-lg bg-white border border-gray-200 p-5"}`}>
       <div className="flex items-center justify-between mb-1">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Premium Usage Projection</h2>
+          {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Premium Usage Projection</h2>}
           <p className="text-xs text-gray-500 mt-0.5">
             {sourceLabel} vs quota this billing cycle
           </p>
@@ -89,32 +85,6 @@ export default function ProjectionChart({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {comparisonPoints && comparisonPoints.length > 0 && (
-            <div className="flex gap-1 mr-2">
-              <button
-                type="button"
-                onClick={() => setCompareMode("single")}
-                className={`px-2 py-1 text-xs rounded-md font-medium transition-colors ${
-                  compareMode === "single"
-                    ? "bg-slate-700 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                Billed
-              </button>
-              <button
-                type="button"
-                onClick={() => setCompareMode("compare")}
-                className={`px-2 py-1 text-xs rounded-md font-medium transition-colors ${
-                  compareMode === "compare"
-                    ? "bg-slate-700 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                Compare
-              </button>
-            </div>
-          )}
           <span className="text-xs text-gray-500">Avg over</span>
           <div className="flex gap-1">
             {AVG_OPTIONS.map((d) => (
@@ -169,8 +139,6 @@ export default function ProjectionChart({
               const labels: Record<string, string> = {
                 actual: "Actual",
                 projected: "Projected",
-                comparisonActual: "Transcript Actual",
-                comparisonProjected: "Transcript Projected",
               };
               return [val, labels[name] ?? name];
             }}
@@ -233,29 +201,6 @@ export default function ProjectionChart({
             strokeWidth={2}
             connectNulls={false}
           />
-          {compareMode === "compare" && (
-            <>
-              <Line
-                type="monotone"
-                dataKey="comparisonActual"
-                name="Transcript Actual"
-                stroke="#94a3b8"
-                dot={false}
-                strokeWidth={2}
-                connectNulls={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="comparisonProjected"
-                name="Transcript Projected"
-                stroke="#cbd5e1"
-                strokeDasharray="4 3"
-                dot={false}
-                strokeWidth={2}
-                connectNulls={false}
-              />
-            </>
-          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

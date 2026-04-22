@@ -23,7 +23,10 @@ interface Session {
 interface Props {
   sessions: Session[];
   onRated: () => void; // trigger parent re-fetch
+  hideTitle?: boolean;
+  embedded?: boolean;
 }
+const SESSION_PAGE_SIZE = 25;
 
 function StarRating({
   value,
@@ -160,8 +163,9 @@ function RatingCell({
   );
 }
 
-export default function SessionList({ sessions, onRated }: Props) {
+export default function SessionList({ sessions, onRated, hideTitle = false, embedded = false }: Props) {
   const [showUnratedOnly, setShowUnratedOnly] = useState(false);
+  const [page, setPage] = useState(0);
   const [now] = useState(() => Date.now());
 
   const thresholds = useMemo(() => {
@@ -187,6 +191,12 @@ export default function SessionList({ sessions, onRated }: Props) {
   const filtered = showUnratedOnly
     ? sessions.filter((s) => !s.rating)
     : sessions;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / SESSION_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const paginatedSessions = filtered.slice(
+    currentPage * SESSION_PAGE_SIZE,
+    currentPage * SESSION_PAGE_SIZE + SESSION_PAGE_SIZE
+  );
 
   function sessionFlags(s: Session): string[] {
     const flags: string[] = [];
@@ -231,21 +241,24 @@ export default function SessionList({ sessions, onRated }: Props) {
   }
 
   return (
-    <div className="rounded-lg bg-white border border-gray-200 p-5">
+    <div className={`${embedded ? "bg-white p-5" : "rounded-lg bg-white border border-gray-200 p-5"}`}>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Sessions</h2>
+          {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Sessions</h2>}
           <p className="text-xs text-gray-500 mt-0.5">
             {sessions.length} sessions found — span is first-to-last event time, so long sessions can include idle time
           </p>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showUnratedOnly}
-            onChange={(e) => setShowUnratedOnly(e.target.checked)}
-            className="rounded"
-          />
+           <input
+             type="checkbox"
+             checked={showUnratedOnly}
+             onChange={(e) => {
+               setShowUnratedOnly(e.target.checked);
+               setPage(0);
+             }}
+             className="rounded"
+           />
           Unrated only
         </label>
       </div>
@@ -271,7 +284,7 @@ export default function SessionList({ sessions, onRated }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.slice(0, 100).map((s) => (
+              {paginatedSessions.map((s) => (
                 <tr key={s.sessionId} className="hover:bg-gray-50">
                   <td className="py-2.5 text-gray-700 text-xs whitespace-nowrap">
                     <div className="flex items-center gap-2">
@@ -339,10 +352,32 @@ export default function SessionList({ sessions, onRated }: Props) {
               ))}
             </tbody>
           </table>
-          {filtered.length > 100 && (
-            <p className="text-xs text-gray-400 text-center mt-3">
-              Showing 100 of {filtered.length} sessions
-            </p>
+          {filtered.length > SESSION_PAGE_SIZE && (
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+              <span>
+                Page {currentPage + 1} of {pageCount} · Showing{" "}
+                {currentPage * SESSION_PAGE_SIZE + 1}-
+                {Math.min(filtered.length, (currentPage + 1) * SESSION_PAGE_SIZE)} of {filtered.length} sessions
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((value) => Math.max(0, value - 1))}
+                  disabled={currentPage === 0}
+                  className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
+                  disabled={currentPage >= pageCount - 1}
+                  className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -43,6 +44,7 @@ const SKILL_READERS = new Set([
   "fetch_webpage",
   // tools commonly used to read SKILL.md files
 ]);
+const SKILL_PAGE_SIZE = 8;
 
 function isCoreSkillTool(name: string): boolean {
   return SKILL_READERS.has(name);
@@ -50,9 +52,20 @@ function isCoreSkillTool(name: string): boolean {
 
 export default function ToolBreakdown({ topTools, skillStats, totalRated }: Props) {
   const hasQualitySignal = totalRated >= 5;
+  const [skillPage, setSkillPage] = useState(0);
+  const skillPageCount = Math.max(1, Math.ceil(skillStats.length / SKILL_PAGE_SIZE));
+  const currentSkillPage = Math.min(skillPage, skillPageCount - 1);
+  const paginatedSkillStats = useMemo(
+    () =>
+      skillStats.slice(
+        currentSkillPage * SKILL_PAGE_SIZE,
+        currentSkillPage * SKILL_PAGE_SIZE + SKILL_PAGE_SIZE
+      ),
+    [currentSkillPage, skillStats]
+  );
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Tool call frequency chart */}
       <div className="rounded-lg bg-white border border-gray-200 p-5">
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Top Tools Used</h2>
@@ -114,82 +127,111 @@ export default function ToolBreakdown({ topTools, skillStats, totalRated }: Prop
             No recognized skills detected yet. FlightDeck now ignores arbitrary repo SKILL.md files.
           </p>
         ) : (
-          <div className="overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-                  <th className="pb-2 font-medium">Skill</th>
-                  <th className="pb-2 font-medium text-right">Sessions</th>
-                  <th className="pb-2 font-medium text-right">Avg Req</th>
-                  {hasQualitySignal && (
-                    <>
-                      <th className="pb-2 font-medium text-right">Avg Quality</th>
-                      <th className="pb-2 font-medium text-right">Quality/100 Req</th>
-                      <th className="pb-2 font-medium text-right">Lift vs Baseline</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {skillStats.map((s) => (
-                  <tr key={s.name} className="hover:bg-gray-50">
-                    <td className="py-2 font-mono text-xs text-gray-800 truncate max-w-[160px]">
-                      {s.name}
-                    </td>
-                    <td className="py-2 text-right text-gray-600">{s.sessions}</td>
-                    <td className="py-2 text-right text-gray-600">{s.avgRequests}</td>
+          <>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                    <th className="pb-2 font-medium">Skill</th>
+                    <th className="pb-2 font-medium text-right">Sessions</th>
+                    <th className="pb-2 font-medium text-right">Avg Req</th>
                     {hasQualitySignal && (
                       <>
-                        <td className="py-2 text-right">
-                          {s.avgQuality !== null ? (
-                            <span
-                              className={`font-semibold ${
-                                s.avgQuality >= 4
-                                  ? "text-green-600"
-                                  : s.avgQuality >= 3
-                                  ? "text-yellow-600"
-                                  : "text-red-500"
-                              }`}
-                            >
-                              {s.avgQuality}/5
-                              <span className="text-gray-400 font-normal text-[10px] ml-1">
-                                n={s.sampleSize}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">no ratings yet</span>
-                          )}
-                        </td>
-                        <td className="py-2 text-right">
-                          {qualityPerRequest(s.avgQuality, s.avgRequests) !== null ? (
-                            <span className="font-semibold text-indigo-600">
-                              {qualityPerRequest(s.avgQuality, s.avgRequests)!.toFixed(2)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">-</span>
-                          )}
-                        </td>
-                        <td className="py-2 text-right">
-                          {s.liftVsBaseline !== null ? (
-                            <span
-                              className={`font-semibold ${
-                                s.liftVsBaseline >= 0 ? "text-green-600" : "text-red-500"
-                              }`}
-                            >
-                              {s.liftVsBaseline > 0 ? "+" : ""}
-                              {s.liftVsBaseline.toFixed(2)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">-</span>
-                          )}
-                        </td>
+                        <th className="pb-2 font-medium text-right">Avg Quality</th>
+                        <th className="pb-2 font-medium text-right">Quality/100 Req</th>
+                        <th className="pb-2 font-medium text-right">Lift vs Baseline</th>
                       </>
                     )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {paginatedSkillStats.map((s) => (
+                    <tr key={s.name} className="hover:bg-gray-50">
+                      <td className="py-2 font-mono text-xs text-gray-800 truncate max-w-[160px]">
+                        {s.name}
+                      </td>
+                      <td className="py-2 text-right text-gray-600">{s.sessions}</td>
+                      <td className="py-2 text-right text-gray-600">{s.avgRequests}</td>
+                      {hasQualitySignal && (
+                        <>
+                          <td className="py-2 text-right">
+                            {s.avgQuality !== null ? (
+                              <span
+                                className={`font-semibold ${
+                                  s.avgQuality >= 4
+                                    ? "text-green-600"
+                                    : s.avgQuality >= 3
+                                    ? "text-yellow-600"
+                                    : "text-red-500"
+                                }`}
+                              >
+                                {s.avgQuality}/5
+                                <span className="text-gray-400 font-normal text-[10px] ml-1">
+                                  n={s.sampleSize}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">no ratings yet</span>
+                            )}
+                          </td>
+                          <td className="py-2 text-right">
+                            {qualityPerRequest(s.avgQuality, s.avgRequests) !== null ? (
+                              <span className="font-semibold text-indigo-600">
+                                {qualityPerRequest(s.avgQuality, s.avgRequests)!.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 text-right">
+                            {s.liftVsBaseline !== null ? (
+                              <span
+                                className={`font-semibold ${
+                                  s.liftVsBaseline >= 0 ? "text-green-600" : "text-red-500"
+                                }`}
+                              >
+                                {s.liftVsBaseline > 0 ? "+" : ""}
+                                {s.liftVsBaseline.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">-</span>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {skillStats.length > SKILL_PAGE_SIZE && (
+              <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                <span>
+                  Page {currentSkillPage + 1} of {skillPageCount} · Showing{" "}
+                  {currentSkillPage * SKILL_PAGE_SIZE + 1}-
+                  {Math.min(skillStats.length, (currentSkillPage + 1) * SKILL_PAGE_SIZE)} of {skillStats.length}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSkillPage((page) => Math.max(0, page - 1))}
+                    disabled={currentSkillPage === 0}
+                    className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSkillPage((page) => Math.min(skillPageCount - 1, page + 1))}
+                    disabled={currentSkillPage >= skillPageCount - 1}
+                    className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

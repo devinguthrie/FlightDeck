@@ -28,6 +28,8 @@ interface Props {
   premiumEntitlement: number;
   ageMinutes: number | null;
   quotaResetDate: string | null;
+  hideTitle?: boolean;
+  embedded?: boolean;
 }
 
 type RangeKey = "24h" | "7d" | "30d" | "cycle" | "all";
@@ -130,6 +132,8 @@ export default function QuotaChart({
   premiumEntitlement,
   ageMinutes,
   quotaResetDate,
+  hideTitle = false,
+  embedded = false,
 }: Props) {
   const [range, setRange] = useState<RangeKey>("7d");
   const [granularity, setGranularity] = useState<GranularityKey>("raw");
@@ -170,13 +174,15 @@ export default function QuotaChart({
     : null;
 
   return (
-    <div className="rounded-lg bg-white border border-gray-200 p-5">
+    <div className={`${embedded ? "bg-white p-5" : "rounded-lg bg-white border border-gray-200 p-5"}`}>
       <div className="flex items-center justify-between mb-1">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            Quota Consumption{" "}
-            <span className="text-xs font-normal text-green-600 ml-1">● Live</span>
-          </h2>
+          {!hideTitle && (
+            <h2 className="text-lg font-semibold text-gray-900">
+              Quota Consumption{" "}
+              <span className="text-xs font-normal text-green-600 ml-1">● Live</span>
+            </h2>
+          )}
           <p className="text-xs text-gray-500 mt-0.5">
             Real usage from GitHub Copilot API · snapshots every 15 min via VS Code extension
             {freshLabel && (

@@ -22,7 +22,7 @@ interface RateLimitError {
   rateLimitReset: string | null;
 }
 
-export function ModelLimitsPanel() {
+export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hideTitle?: boolean; embedded?: boolean }) {
   const [limits, setLimits] = useState<ModelLimit[]>([]);
   const [errors, setErrors] = useState<RateLimitError[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,8 +53,8 @@ export function ModelLimitsPanel() {
   }
 
   return (
-    <div className="p-4 border border-gray-200 rounded-lg bg-white">
-      <h2 className="text-xl font-bold mb-4">Model Constraints</h2>
+    <div className={`${embedded ? "bg-white p-4" : "p-4 border border-gray-200 rounded-lg bg-white"}`}>
+      {!hideTitle && <h2 className="text-xl font-bold mb-4">Model Constraints</h2>}
 
       {/* Model Limits Table */}
       {limits.length > 0 && (

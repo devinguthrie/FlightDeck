@@ -17,6 +17,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mitmproxy import http
@@ -97,6 +98,79 @@ def _parse_usage(body: bytes) -> dict | None:
     return usage
 
 
+def _extract_rate_limit(flow: http.HTTPFlow) -> tuple[int | None, int | None, str | None]:
+    """Read common rate-limit headers and normalize reset time to ISO when possible."""
+    headers = flow.response.headers
+    limit_raw = headers.get("x-ratelimit-limit") or headers.get("ratelimit-limit")
+    remaining_raw = headers.get("x-ratelimit-remaining") or headers.get("ratelimit-remaining")
+    reset_raw = headers.get("x-ratelimit-reset") or headers.get("ratelimit-reset")
+
+    def _to_int(value: str | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    def _to_iso_reset(value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        # Unix seconds or milliseconds are common in rate-limit headers.
+        try:
+            numeric = int(value)
+            if numeric > 10_000_000_000:
+                dt = datetime.fromtimestamp(numeric / 1000, tz=timezone.utc)
+            else:
+                dt = datetime.fromtimestamp(numeric, tz=timezone.utc)
+            return dt.isoformat().replace("+00:00", "Z")
+        except Exception:
+            pass
+
+        # Fall back to raw value (some providers return RFC1123 strings).
+        return value
+
+    return _to_int(limit_raw), _to_int(remaining_raw), _to_iso_reset(reset_raw)
+
+
+def _extract_error(body: bytes) -> tuple[str | None, str | None]:
+    """Extract error code/message from JSON or SSE error payloads."""
+    try:
+        parsed = json.loads(body)
+        err = parsed.get("error")
+        if isinstance(err, dict):
+            code = err.get("code") or err.get("type")
+            message = err.get("message")
+            return str(code) if code is not None else None, str(message) if message is not None else None
+        if isinstance(err, str):
+            return None, err
+    except Exception:
+        pass
+
+    # SSE error frames often look like: data: {"error": {...}}
+    for line in body.split(b"\n"):
+        line = line.strip()
+        if not line.startswith(b"data:"):
+            continue
+        raw = line[len(b"data:"):].strip()
+        if raw == b"[DONE]":
+            continue
+        try:
+            chunk = json.loads(raw)
+        except Exception:
+            continue
+        err = chunk.get("error") if isinstance(chunk, dict) else None
+        if isinstance(err, dict):
+            code = err.get("code") or err.get("type")
+            message = err.get("message")
+            return str(code) if code is not None else None, str(message) if message is not None else None
+        if isinstance(err, str):
+            return None, err
+
+    return None, None
+
+
 class CopilotCapture:
     def __init__(self):
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,6 +210,15 @@ class CopilotCapture:
         else:
             body = flow.response.content
         usage = _parse_usage(body)
+        rate_limit_limit, rate_limit_remaining, rate_limit_reset_at = _extract_rate_limit(flow)
+
+        status = flow.response.status_code or 0
+        error_code = None
+        error_message = None
+        if status >= 400:
+            parsed_code, parsed_message = _extract_error(body)
+            error_code = parsed_code or str(status)
+            error_message = parsed_message or flow.response.reason
 
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -145,6 +228,11 @@ class CopilotCapture:
             "total_tokens": usage.get("total_tokens") if usage else None,
             "latency_ms": latency_ms,
             "source": source,
+            "rate_limit_limit": rate_limit_limit,
+            "rate_limit_remaining": rate_limit_remaining,
+            "rate_limit_reset_at": rate_limit_reset_at,
+            "error_code": error_code,
+            "error_message": error_message,
         }
 
         with OUTPUT_FILE.open("a", encoding="utf-8") as f:

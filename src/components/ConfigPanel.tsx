@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PLANS } from "@/lib/pricing";
 import type { PlanKey } from "@/lib/pricing";
 
@@ -14,32 +14,51 @@ interface Config {
 interface Props {
   config: Config;
   onSaved: (c: Config) => void;
+  detectedPlan?: PlanKey | null;
 }
 
-export default function ConfigPanel({ config, onSaved }: Props) {
+export default function ConfigPanel({ config, onSaved, detectedPlan = null }: Props) {
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<PlanKey>(config.plan);
   const [startDay, setStartDay] = useState(String(config.billingCycleStartDay));
   const [extra, setExtra] = useState(String(config.additionalRequests));
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPlan(config.plan);
+    setStartDay(String(config.billingCycleStartDay));
+    setExtra(String(config.additionalRequests));
+  }, [config]);
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
+      const payload: {
+        plan: PlanKey;
+        billingCycleStartDay: number;
+        additionalRequests: number;
+      } = {
+        plan,
+        billingCycleStartDay: Number(startDay),
+        additionalRequests: Number(extra),
+      };
       const res = await fetch("/api/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          plan,
-          billingCycleStartDay: Number(startDay),
-          additionalRequests: Number(extra),
-        }),
+        body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        const saved = (await res.json()) as Config;
-        onSaved(saved);
-        setOpen(false);
+      if (!res.ok) {
+        const message = (await res.text()).trim();
+        setError(message || "Failed to save settings.");
+        return;
       }
+      const saved = (await res.json()) as Config;
+      onSaved(saved);
+      setOpen(false);
+    } catch {
+      setError("Failed to save settings.");
     } finally {
       setSaving(false);
     }
@@ -48,7 +67,10 @@ export default function ConfigPanel({ config, onSaved }: Props) {
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setError(null);
+          setOpen((o) => !o);
+        }}
         className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
         title="Configure plan & billing"
       >
@@ -70,8 +92,11 @@ export default function ConfigPanel({ config, onSaved }: Props) {
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Copilot Plan</label>
+              <label htmlFor="config-plan" className="block text-xs font-medium text-gray-700 mb-1">
+                Copilot Plan
+              </label>
               <select
+                id="config-plan"
                 value={plan}
                 onChange={(e) => setPlan(e.target.value as PlanKey)}
                 className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
@@ -85,13 +110,19 @@ export default function ConfigPanel({ config, onSaved }: Props) {
               <p className="text-[10px] text-gray-400 mt-1">
                 Find your plan at github.com/settings/billing
               </p>
+              {detectedPlan && (
+                <p className="mt-1 text-[10px] text-blue-600">
+                  Live billing currently reports {PLANS[detectedPlan].label}. This is informational only and will not overwrite your saved plan.
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label htmlFor="config-start-day" className="block text-xs font-medium text-gray-700 mb-1">
                 Billing Cycle Start Day
               </label>
               <input
+                id="config-start-day"
                 type="number"
                 min={1}
                 max={28}
@@ -105,10 +136,11 @@ export default function ConfigPanel({ config, onSaved }: Props) {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label htmlFor="config-extra-requests" className="block text-xs font-medium text-gray-700 mb-1">
                 Additional Purchased Requests
               </label>
               <input
+                id="config-extra-requests"
                 type="number"
                 min={0}
                 value={extra}
@@ -127,12 +159,21 @@ export default function ConfigPanel({ config, onSaved }: Props) {
               {saving ? "Saving…" : "Save"}
             </button>
             <button
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                setError(null);
+              }}
               className="text-sm text-gray-500 hover:text-gray-700 px-2"
             >
               Cancel
             </button>
           </div>
+
+          {error && (
+            <p role="alert" className="mt-3 text-xs text-red-600">
+              {error}
+            </p>
+          )}
         </div>
       )}
     </div>

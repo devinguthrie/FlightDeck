@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import ActivityTimeline from "@/components/ActivityTimeline";
 import DivergencePanel from "@/components/DivergencePanel";
 import ProjectionChart from "@/components/ProjectionChart";
 import QuotaChart from "@/components/QuotaChart";
@@ -196,7 +195,7 @@ function KpiCard({
   label: string;
   value: string;
   sub?: string;
-  color: "blue" | "green" | "amber" | "purple";
+  color: "blue" | "green" | "amber" | "purple" | "red";
   progress?: number; // 0–1
 }) {
   const colors = {
@@ -204,12 +203,14 @@ function KpiCard({
     green: "bg-green-50 border-green-200 text-green-700",
     amber: "bg-amber-50 border-amber-200 text-amber-700",
     purple: "bg-purple-50 border-purple-200 text-purple-700",
+    red: "bg-red-50 border-red-200 text-red-700",
   };
   const bar = {
     blue: "bg-blue-400",
     green: "bg-green-400",
     amber: "bg-amber-400",
     purple: "bg-purple-400",
+    red: "bg-red-400",
   };
 
   return (
@@ -229,6 +230,89 @@ function KpiCard({
   );
 }
 
+function CollapsibleSection({
+  title,
+  description,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  description?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${open ? "Collapse" : "Expand"} ${title}`}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-start gap-2 px-5 py-4 text-left transition-colors hover:bg-gray-50"
+      >
+        <svg
+          className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m9 5 7 7-7 7" />
+        </svg>
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">{title}</h2>
+          {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
+        </div>
+      </button>
+
+      {open && <div className="border-t border-gray-100 px-5 py-5">{children}</div>}
+    </section>
+  );
+}
+
+const TOOL_LATENCY_PAGE_SIZE = 10;
+
+function CollapsibleModule({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${open ? "Collapse" : "Expand"} ${title}`}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 transition-colors hover:bg-gray-50"
+      >
+        <svg
+          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m9 5 7 7-7 7" />
+        </svg>
+        <span>{title}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-200">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -237,11 +321,11 @@ export default function Dashboard() {
   const [config, setConfig] = useState<Config | null>(null);
   const [quota, setQuota] = useState<QuotaSummary | null>(null);
   const [avgDays, setAvgDays] = useState(7);
-  const [timeRange, setTimeRange] = useState<"7d" | "30d">("7d");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
   const [workspaceList, setWorkspaceList] = useState<string[]>([]);
+  const [toolLatencyPage, setToolLatencyPage] = useState(0);
 
   const loadStats = useCallback(async () => {
     try {
@@ -313,27 +397,6 @@ export default function Dashboard() {
     if (!loading) loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avgDays, selectedWorkspace]);
-
-  // Auto-sync plan when quota data shows a different entitlement than the stored config.
-  // This handles mid-cycle plan upgrades (e.g., Pro → Pro+).
-  useEffect(() => {
-    if (!quota?.available || !config) return;
-    const inferred = inferPlanKey(quota.copilotPlan, quota.premiumEntitlement);
-    if (!inferred || inferred === config.plan) return;
-    fetch("/api/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan: inferred }),
-    })
-      .then((r) => r.json())
-      .then((updated) => {
-        setConfig(updated as Config);
-        loadStats();
-      })
-      .catch(() => {});
-    // Only run when quota or config identity changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quota?.copilotPlan, quota?.premiumEntitlement, config?.plan]);
 
   if (loading) {
     return (
@@ -490,7 +553,11 @@ export default function Dashboard() {
         if (byDay.has(key)) {
           carryActual = byDay.get(key) ?? carryActual;
         }
-        points.push({ date: key, actual: carryActual, projected: null });
+        points.push({
+          date: key,
+          actual: carryActual,
+          projected: key === latestSnapshotDay ? carryActual : null,
+        });
         continue;
       }
 
@@ -551,36 +618,98 @@ export default function Dashboard() {
     month: "short",
     day: "numeric",
   });
+  const detectedQuotaPlan =
+    quota?.available === true
+      ? inferPlanKey(quota.copilotPlan, quota.premiumEntitlement)
+      : null;
+  const toolLatencyPageCount = Math.max(1, Math.ceil(stats.toolLatencies.length / TOOL_LATENCY_PAGE_SIZE));
+  const currentToolLatencyPage = Math.min(toolLatencyPage, toolLatencyPageCount - 1);
+  const paginatedToolLatencies = stats.toolLatencies.slice(
+    currentToolLatencyPage * TOOL_LATENCY_PAGE_SIZE,
+    currentToolLatencyPage * TOOL_LATENCY_PAGE_SIZE + TOOL_LATENCY_PAGE_SIZE
+  );
+  const lowConfidenceProjection =
+    projectionConfidenceLabel.startsWith("Low confidence") ||
+    projectionConfidenceLabel.startsWith("Medium confidence");
+  const contextualAlert = (() => {
+    if (projectedWithinCycle && effectiveProjectedExhaustionDate) {
+      const exhaustionLabel = effectiveProjectedExhaustionDate.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      return {
+        tone: "red" as const,
+        title: "Quota exhaustion risk",
+        value: exhaustionLabel,
+        description: `At the current pace, premium quota runs out around ${exhaustionLabel}.`,
+      };
+    }
+    if (!quota?.available) {
+      return {
+        tone: "amber" as const,
+        title: "Real billed quota is not connected yet",
+        value: "Estimated",
+        description: "Use this dashboard for direction, not exact billing decisions, until quota snapshots are available.",
+      };
+    }
+    if (!vscodeExtActive) {
+      return {
+        tone: "amber" as const,
+        title: "Recent billed usage may be missing",
+        value: "Stale",
+        description: "Refresh after the extension writes a new snapshot before trusting short-term trend changes.",
+      };
+    }
+    if (hadQuotaReset) {
+      return {
+        tone: "blue" as const,
+        title: "Quota reset detected",
+        value: "Post-reset",
+        description: "Trend and burn calculations are using post-upgrade history so old-plan values do not distort the current picture.",
+      };
+    }
+    if (lowConfidenceProjection) {
+      return {
+        tone: "blue" as const,
+        title: "Projection confidence is still early",
+        value: "Early",
+        description: projectionConfidenceLabel,
+      };
+    }
+    return null;
+  })();
+  const alertTones = {
+    red: "bg-red-50 border-red-200 text-red-900",
+    amber: "bg-amber-50 border-amber-200 text-amber-900",
+    blue: "bg-blue-50 border-blue-200 text-blue-900",
+  } as const;
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          <div className="min-w-0">
             <h1 className="text-xl font-bold text-gray-900">FlightDeck</h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              VS Code Copilot · {config.plan.toUpperCase()} plan ·{" "}
-              Billing cycle: {cycleStartLabel} – {cycleEndLabel}
+              {config.plan.toUpperCase()} plan · {cycleStartLabel} – {cycleEndLabel}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-nowrap">
             {/* VS Code extension status */}
-            {quota !== null && (
-              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
-                vscodeExtActive
-                  ? "bg-purple-50 border-purple-200 text-purple-700"
-                  : "bg-gray-50 border-gray-200 text-gray-400"
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  vscodeExtActive ? "bg-purple-500" : "bg-gray-300"
-                }`} />
-                VS Code Ext
-              </div>
-            )}
+            <div className={`shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-medium ${
+              vscodeExtActive
+                ? "bg-purple-50 border-purple-200 text-purple-700"
+                : "bg-gray-50 border-gray-200 text-gray-400"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                vscodeExtActive ? "bg-purple-500" : "bg-gray-300"
+              }`} />
+              VS Code Ext
+            </div>
             {/* Proxy server status */}
             {stats && (
-              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+              <div className={`shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-medium ${
                 stats.proxyStats.proxyActive
                   ? "bg-green-50 border-green-200 text-green-700"
                   : "bg-gray-50 border-gray-200 text-gray-400"
@@ -593,7 +722,7 @@ export default function Dashboard() {
             )}
             {/* Copilot CLI status */}
             {stats && (
-              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+              <div className={`shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border font-medium ${
                 stats.proxyStats.cliActive
                   ? "bg-blue-50 border-blue-200 text-blue-700"
                   : "bg-gray-50 border-gray-200 text-gray-400"
@@ -609,7 +738,7 @@ export default function Dashboard() {
               <select
                 value={selectedWorkspace ?? ""}
                 onChange={(e) => setSelectedWorkspace(e.target.value || null)}
-                className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                className="shrink-0 text-[11px] border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-300 max-w-32"
                 title="Filter transcript metrics by project"
               >
                 <option value="">All projects</option>
@@ -624,7 +753,7 @@ export default function Dashboard() {
                 loadSessions();
                 loadQuota();
               }}
-              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              className="shrink-0 text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"
               title="Refresh data"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -639,6 +768,7 @@ export default function Dashboard() {
             </button>
             <ConfigPanel
               config={config}
+              detectedPlan={detectedQuotaPlan}
               onSaved={(c) => {
                 setConfig(c);
                 loadStats();
@@ -649,51 +779,49 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <KpiCard
-            label={quota?.available ? "Premium Used This Cycle" : "Transcript Turns This Cycle"}
-            value={`${effectiveUsed.toFixed(1)} / ${effectiveQuota}`}
-            sub={`${(effectiveUsagePct * 100).toFixed(2)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}${selectedWorkspace ? " · account-wide, not project-scoped" : ""}`}
-            color="blue"
-            progress={effectiveUsagePct}
-          />
-          <KpiCard
-            label="Sessions / Avg Quality"
-            value={`${stats.totalSessions}`}
-            sub={
-              stats.avgQuality !== null
-                ? `Avg quality: ${stats.avgQuality}/5 (${stats.totalRated} rated)`
-                : `${stats.totalRated} rated — start rating sessions below`
-            }
-            color="purple"
-          />
-        </div>
+        <CollapsibleSection
+          title="KPIs"
+          description="Current billing-cycle health, immediate risk, and the quickest quality signals."
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <KpiCard
+              label={quota?.available ? "Premium Used This Cycle" : "Transcript Turns This Cycle"}
+              value={`${effectiveUsed.toFixed(1)} / ${effectiveQuota}`}
+              sub={`${(effectiveUsagePct * 100).toFixed(2)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}${selectedWorkspace ? " · account-wide, not project-scoped" : ""}`}
+              color="blue"
+              progress={effectiveUsagePct}
+            />
 
-        {/* 7-day rolling + Context saturation KPI row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <KpiCard
-            label="7-Day Rolling Requests"
-            value={`${effectiveSevenDayRequests}`}
-            sub={`${effectiveSevenDayBurnRate}/day avg · ${sevenDaySourceLabel} · independent of billing cycle${selectedWorkspace ? " · account-wide, not project-scoped" : ""}`}
-            color="green"
-          />
-          <KpiCard
-            label="Est. Transcript Context"
-            value={
-              stats.avgContextSaturation !== null
-                ? `${(stats.avgContextSaturation * 100).toFixed(1)}%`
-                : "No data"
-            }
-            sub={`Transcript-only estimate of 128k context usage; system prompts and file context are missing, so this undercounts true context`}
-            color="amber"
-            progress={stats.avgContextSaturation ?? undefined}
-          />
-        </div>
+            {contextualAlert && (
+              <KpiCard
+                label={contextualAlert.title}
+                value={contextualAlert.value}
+                sub={contextualAlert.description}
+                color={contextualAlert.tone}
+              />
+            )}
 
-        {/* Token accuracy + output/input ratio KPIs — shown when proxy has data */}
-        {(stats.proxyStats.tokenAccuracy || stats.outputInputRatio !== null) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <KpiCard
+              label="Sessions / Avg Quality"
+              value={`${stats.totalSessions}`}
+              sub={
+                stats.avgQuality !== null
+                  ? `Avg quality: ${stats.avgQuality}/5 (${stats.totalRated} rated)`
+                  : `${stats.totalRated} rated — start rating sessions below`
+              }
+              color="purple"
+            />
+            <KpiCard
+              label="Est. Transcript Context"
+              value={
+                stats.avgContextSaturation !== null
+                  ? `${(stats.avgContextSaturation * 100).toFixed(1)}%`
+                  : "No data"
+              }
+              sub="Transcript-only estimate of 128k context usage; system prompts and file context are missing, so this undercounts true context"
+              color="amber"
+              progress={stats.avgContextSaturation ?? undefined}
+            />
             {stats.proxyStats.tokenAccuracy && (
               <KpiCard
                 label={`CLI vs VS Code Usage${selectedWorkspace ? " (account-wide)" : ""}`}
@@ -711,197 +839,272 @@ export default function Dashboard() {
               />
             )}
           </div>
-        )}
+        </CollapsibleSection>
 
-        <RoiExplorationPanel
-          dailyBuckets={stats.dailyBuckets}
-          quotaTimeSeries={quota?.timeSeries ?? []}
-          intradayBuckets={stats.intradayBuckets}
-          cycleUserTurns={stats.cycleUserTurns}
-          cycleAssistantTurns={stats.cycleAssistantTurns}
-          cycleToolCalls={stats.cycleToolCalls}
-          cycleDurationMinutes={stats.cycleDurationMinutes}
-          cycleActiveMinutes={stats.cycleActiveMinutes}
-          premiumBurnPerUserPrompt={stats.premiumBurnPerUserPrompt}
-          toolOverheadRatio={stats.toolOverheadRatio}
-          promptEfficiencyPer100Turns={stats.promptEfficiencyPer100Turns}
-          qualityToolOverheadCorrelation={stats.qualityToolOverheadCorrelation}
-          marginalQualityCurve={stats.marginalQualityCurve}
-          quotaAgeMinutes={quota?.ageMinutes ?? null}
-          totalRated={stats.totalRated}
-          skillStats={stats.skillStats}
-        />
-
-        <DivergencePanel
-          dailyBuckets={stats.dailyBuckets}
-          quotaTimeSeries={quota?.timeSeries ?? []}
-          projectScopedComparison={selectedWorkspace !== null}
-        />
-
-        {/* Charts */}
-        {quota?.available && (
-          <QuotaChart
-            timeSeries={quota.timeSeries}
-            chatEntitlement={quota.chatEntitlement}
-            completionsEntitlement={quota.completionsEntitlement}
-            premiumEntitlement={quota.premiumEntitlement}
-            ageMinutes={quota.ageMinutes}
-            quotaResetDate={quota.quotaResetDate}
-          />
-        )}
-
-        <ActivityTimeline
-          data={stats.dailyBuckets}
-          range={timeRange}
-          onRangeChange={setTimeRange}
-        />
-
-        <ProjectionChart
-          points={effectiveProjectionPoints}
-          comparisonPoints={quota?.available ? stats.projectionPoints : undefined}
-          planQuota={effectiveQuota}
-          exhaustionDate={projectedWithinCycle && effectiveProjectedExhaustionDate
-            ? (() => {
-                const year = effectiveProjectedExhaustionDate.getFullYear();
-                const month = String(effectiveProjectedExhaustionDate.getMonth() + 1).padStart(2, "0");
-                const day = String(effectiveProjectedExhaustionDate.getDate()).padStart(2, "0");
-                return `${year}-${month}-${day}`;
-              })()
-            : null}
-          dailyBurnRate={effectiveDailyBurn}
-          avgDays={avgDays}
-          onAvgDaysChange={setAvgDays}
-          sourceLabel={quota?.available ? "Billed premium usage" : "Transcript-estimated turns"}
-          coverageDays={billedCoverageDays}
-          confidenceLabel={projectionConfidenceLabel}
-        />
-
-        <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} totalRated={stats.totalRated} />
-
-        <TokenVolumeChart
-          dailyBuckets={stats.dailyBuckets}
-          topWorkspacesByTokens={stats.topWorkspacesByTokens}
-        />
-
-        {/* Tool latency table */}
-        {stats.toolLatencies.length > 0 && (
-          <div className="rounded-lg bg-white border border-gray-200 p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Tool Latency</h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Execution time per tool call — P50 / P95 across all recorded sessions
+        <section aria-label="Diagnostics" className="space-y-4">
+          <div className="px-1">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Diagnostics</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Trend, efficiency, and usage breakdowns that explain what changed.
             </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
-                    <th className="pb-2 pr-4">Tool</th>
-                    <th className="pb-2 pr-4 text-right">Calls</th>
-                    <th className="pb-2 pr-4 text-right">Avg</th>
-                    <th className="pb-2 pr-4 text-right">P50</th>
-                    <th className="pb-2 text-right">P95</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {stats.toolLatencies.map((t) => (
-                    <tr key={t.name} className="hover:bg-gray-50">
-                      <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{t.name}</td>
-                      <td className="py-1.5 pr-4 text-right text-gray-500">{t.count}</td>
-                      <td className="py-1.5 pr-4 text-right text-gray-500">{t.avgMs}ms</td>
-                      <td className="py-1.5 pr-4 text-right text-gray-700">{t.p50Ms}ms</td>
-                      <td className={`py-1.5 text-right font-medium ${
-                        t.p95Ms > 10000 ? "text-red-600" : t.p95Ms > 5000 ? "text-amber-600" : "text-gray-700"
-                      }`}>
-                        {t.p95Ms}ms
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
-        )}
-
-        {/* CLI Activity panel — shown when proxy is set up (any data ever recorded) */}
-        {stats.proxyStats.totalRequests > 0 && (
-          <div className="rounded-lg bg-white border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-1">
-              <h2 className="text-lg font-semibold text-gray-900">Proxy Capture</h2>
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                stats.proxyStats.proxyActive
-                  ? "bg-green-50 border-green-200 text-green-700"
-                  : "bg-gray-50 border-gray-200 text-gray-400"
-              }`}>
-                {stats.proxyStats.proxyActive ? "Active" : "Inactive"}
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mb-4">
-              {stats.proxyStats.totalRequests} total requests intercepted
-              {stats.proxyStats.lastCapturedAt && (
-                <> · last at {new Date(stats.proxyStats.lastCapturedAt).toLocaleString()}</>
-              )}
-            </p>
-
-            {/* Model breakdown */}
-            {stats.proxyStats.modelBreakdown.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
-                      <th className="pb-2 pr-4">Model</th>
-                      <th className="pb-2 pr-4 text-right">Requests</th>
-                      <th className="pb-2 pr-4 text-right">% of Total</th>
-                      <th className="pb-2 pr-4 text-right">Prompt Tokens</th>
-                      <th className="pb-2 pr-4 text-right">Completion Tokens</th>
-                      <th className="pb-2 text-right">Avg Latency</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {stats.proxyStats.modelBreakdown.map((m) => (
-                      <tr key={m.model} className="hover:bg-gray-50">
-                        <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{m.model}</td>
-                        <td className="py-1.5 pr-4 text-right text-gray-500">{m.count}</td>
-                        <td className="py-1.5 pr-4 text-right text-gray-500">
-                          {Math.round((m.count / Math.max(1, stats.proxyStats.totalRequests)) * 100)}%
-                        </td>
-                        <td className="py-1.5 pr-4 text-right text-gray-500">
-                          {m.totalPromptTokens > 0 ? fmtTokens(m.totalPromptTokens) : "—"}
-                        </td>
-                        <td className="py-1.5 pr-4 text-right text-gray-500">
-                          {m.totalCompletionTokens > 0 ? fmtTokens(m.totalCompletionTokens) : "—"}
-                        </td>
-                        <td className="py-1.5 text-right text-gray-700">{m.avgLatencyMs}ms</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="space-y-4">
+            {quota?.available && (
+              <CollapsibleModule title="Quota Consumption">
+                <QuotaChart
+                  embedded
+                  hideTitle
+                  timeSeries={quota.timeSeries}
+                  chatEntitlement={quota.chatEntitlement}
+                  completionsEntitlement={quota.completionsEntitlement}
+                  premiumEntitlement={quota.premiumEntitlement}
+                  ageMinutes={quota.ageMinutes}
+                  quotaResetDate={quota.quotaResetDate}
+                />
+              </CollapsibleModule>
             )}
-          </div>
-        )}
 
-        {/* Proxy setup prompt — shown when proxy not yet configured */}
-        {stats.proxyStats.totalRequests === 0 && (
-          <div className="rounded-lg bg-gray-50 border border-dashed border-gray-300 p-5">
-            <h2 className="text-sm font-semibold text-gray-600 mb-1">MITM Proxy — not set up</h2>
-            <p className="text-xs text-gray-500">
-              Run <code className="bg-white px-1 py-0.5 rounded border text-xs">scripts\Start-CopilotProxy.ps1</code> to
-              capture exact token counts and track Copilot CLI (including multi-agent) requests.
-              CLI sessions are invisible without the proxy.
+            <CollapsibleModule title="Premium Usage Projection">
+              <ProjectionChart
+                embedded
+                hideTitle
+                points={effectiveProjectionPoints}
+                planQuota={effectiveQuota}
+                exhaustionDate={projectedWithinCycle && effectiveProjectedExhaustionDate
+                  ? (() => {
+                      const year = effectiveProjectedExhaustionDate.getFullYear();
+                      const month = String(effectiveProjectedExhaustionDate.getMonth() + 1).padStart(2, "0");
+                      const day = String(effectiveProjectedExhaustionDate.getDate()).padStart(2, "0");
+                      return `${year}-${month}-${day}`;
+                    })()
+                  : null}
+                dailyBurnRate={effectiveDailyBurn}
+                avgDays={avgDays}
+                onAvgDaysChange={setAvgDays}
+                sourceLabel={quota?.available ? "Billed premium usage" : "Transcript-estimated turns"}
+                coverageDays={billedCoverageDays}
+                confidenceLabel={projectionConfidenceLabel}
+              />
+            </CollapsibleModule>
+
+            <CollapsibleModule title="ROI Exploration">
+              <RoiExplorationPanel
+                embedded
+                hideTitle
+                dailyBuckets={stats.dailyBuckets}
+                quotaTimeSeries={quota?.timeSeries ?? []}
+                intradayBuckets={stats.intradayBuckets}
+                cycleUserTurns={stats.cycleUserTurns}
+                cycleAssistantTurns={stats.cycleAssistantTurns}
+                cycleToolCalls={stats.cycleToolCalls}
+                cycleDurationMinutes={stats.cycleDurationMinutes}
+                cycleActiveMinutes={stats.cycleActiveMinutes}
+                premiumBurnPerUserPrompt={stats.premiumBurnPerUserPrompt}
+                toolOverheadRatio={stats.toolOverheadRatio}
+                promptEfficiencyPer100Turns={stats.promptEfficiencyPer100Turns}
+                qualityToolOverheadCorrelation={stats.qualityToolOverheadCorrelation}
+                marginalQualityCurve={stats.marginalQualityCurve}
+                quotaAgeMinutes={quota?.ageMinutes ?? null}
+                totalRated={stats.totalRated}
+                skillStats={stats.skillStats}
+              />
+            </CollapsibleModule>
+
+            <CollapsibleModule title="Divergence Analysis">
+              <DivergencePanel
+                embedded
+                hideTitle
+                dailyBuckets={stats.dailyBuckets}
+                quotaTimeSeries={quota?.timeSeries ?? []}
+                projectScopedComparison={selectedWorkspace !== null}
+              />
+            </CollapsibleModule>
+
+            <CollapsibleModule title="Skill Impact">
+              <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} totalRated={stats.totalRated} />
+            </CollapsibleModule>
+
+            <CollapsibleModule title="Token Volume">
+              <TokenVolumeChart
+                dailyBuckets={stats.dailyBuckets}
+                topWorkspacesByTokens={stats.topWorkspacesByTokens}
+              />
+            </CollapsibleModule>
+          </div>
+        </section>
+
+        <section aria-label="Evidence" className="space-y-4">
+          <div className="px-1">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Evidence</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Raw proof, capture health, and session-level drill-down.
             </p>
           </div>
-        )}
+          <div className="space-y-4">
+            {stats.toolLatencies.length > 0 && (
+              <CollapsibleModule title="Tool Latency">
+                <div className="rounded-lg bg-white border border-gray-200 p-5">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-1">Tool Latency</h2>
+                  <p className="text-xs text-gray-500 mb-4">
+                    Execution time per tool call — P50 / P95 across all recorded sessions
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
+                          <th className="pb-2 pr-4">Tool</th>
+                          <th className="pb-2 pr-4 text-right">Calls</th>
+                          <th className="pb-2 pr-4 text-right">Avg</th>
+                          <th className="pb-2 pr-4 text-right">P50</th>
+                          <th className="pb-2 text-right">P95</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {paginatedToolLatencies.map((t) => (
+                          <tr key={t.name} className="hover:bg-gray-50">
+                            <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{t.name}</td>
+                            <td className="py-1.5 pr-4 text-right text-gray-500">{t.count}</td>
+                            <td className="py-1.5 pr-4 text-right text-gray-500">{t.avgMs}ms</td>
+                            <td className="py-1.5 pr-4 text-right text-gray-700">{t.p50Ms}ms</td>
+                            <td className={`py-1.5 text-right font-medium ${
+                              t.p95Ms > 10000 ? "text-red-600" : t.p95Ms > 5000 ? "text-amber-600" : "text-gray-700"
+                            }`}>
+                              {t.p95Ms}ms
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {stats.toolLatencies.length > TOOL_LATENCY_PAGE_SIZE && (
+                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                      <span>
+                        Page {currentToolLatencyPage + 1} of {toolLatencyPageCount} · Showing{" "}
+                        {currentToolLatencyPage * TOOL_LATENCY_PAGE_SIZE + 1}-
+                        {Math.min(
+                          stats.toolLatencies.length,
+                          (currentToolLatencyPage + 1) * TOOL_LATENCY_PAGE_SIZE
+                        )}{" "}
+                        of {stats.toolLatencies.length} tools
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setToolLatencyPage((page) => Math.max(0, page - 1))}
+                          disabled={currentToolLatencyPage === 0}
+                          className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setToolLatencyPage((page) => Math.min(toolLatencyPageCount - 1, page + 1))}
+                          disabled={currentToolLatencyPage >= toolLatencyPageCount - 1}
+                          className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleModule>
+            )}
 
-        {/* Session list with quality ratings */}
-        <SessionList
-          sessions={selectedWorkspace ? sessions.filter((s) => s.workspaceName === selectedWorkspace) : sessions}
-          onRated={() => {
-            loadSessions();
-            loadStats();
-          }}
-        />
+            <CollapsibleModule title="Proxy Capture">
+              <div className="rounded-lg bg-white border border-gray-200 p-5">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-lg font-semibold text-gray-900">Proxy Capture</h2>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                    stats.proxyStats.proxyActive
+                      ? "bg-green-50 border-green-200 text-green-700"
+                      : stats.proxyStats.totalRequests > 0
+                      ? "bg-gray-50 border-gray-200 text-gray-400"
+                      : "bg-amber-50 border-amber-200 text-amber-700"
+                  }`}>
+                    {stats.proxyStats.proxyActive
+                      ? "Active"
+                      : stats.proxyStats.totalRequests > 0
+                      ? "Inactive"
+                      : "Not set up"}
+                  </span>
+                </div>
 
-        {/* Model Limits and Rate Limiting */}
-        <ModelLimitsPanel />
+                {stats.proxyStats.totalRequests > 0 ? (
+                  <>
+                    <p className="text-xs text-gray-500 mb-4">
+                      {stats.proxyStats.totalRequests} total requests intercepted
+                      {stats.proxyStats.lastCapturedAt && (
+                        <> · last at {new Date(stats.proxyStats.lastCapturedAt).toLocaleString()}</>
+                      )}
+                    </p>
+
+                    {stats.proxyStats.modelBreakdown.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
+                              <th className="pb-2 pr-4">Model</th>
+                              <th className="pb-2 pr-4 text-right">Requests</th>
+                              <th className="pb-2 pr-4 text-right">% of Total</th>
+                              <th className="pb-2 pr-4 text-right">Prompt Tokens</th>
+                              <th className="pb-2 pr-4 text-right">Completion Tokens</th>
+                              <th className="pb-2 text-right">Avg Latency</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {stats.proxyStats.modelBreakdown.map((m) => (
+                              <tr key={m.model} className="hover:bg-gray-50">
+                                <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{m.model}</td>
+                                <td className="py-1.5 pr-4 text-right text-gray-500">{m.count}</td>
+                                <td className="py-1.5 pr-4 text-right text-gray-500">
+                                  {Math.round((m.count / Math.max(1, stats.proxyStats.totalRequests)) * 100)}%
+                                </td>
+                                <td className="py-1.5 pr-4 text-right text-gray-500">
+                                  {m.totalPromptTokens > 0 ? fmtTokens(m.totalPromptTokens) : "—"}
+                                </td>
+                                <td className="py-1.5 pr-4 text-right text-gray-500">
+                                  {m.totalCompletionTokens > 0 ? fmtTokens(m.totalCompletionTokens) : "—"}
+                                </td>
+                                <td className="py-1.5 text-right text-gray-700">{m.avgLatencyMs}ms</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-lg bg-gray-50 border border-dashed border-gray-300 p-4 mt-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-1">
+                      {stats.proxyStats.proxyActive ? "Proxy running, waiting for first capture" : "MITM Proxy — not set up"}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      Run <code className="bg-white px-1 py-0.5 rounded border text-xs">scripts\Start-CopilotProxy.ps1</code> to
+                      capture exact token counts and track Copilot CLI requests. CLI sessions stay invisible without the proxy.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </CollapsibleModule>
+
+            <CollapsibleModule title="Sessions">
+              <SessionList
+                embedded
+                hideTitle
+                sessions={selectedWorkspace ? sessions.filter((s) => s.workspaceName === selectedWorkspace) : sessions}
+                onRated={() => {
+                  loadSessions();
+                  loadStats();
+                }}
+              />
+            </CollapsibleModule>
+
+            <CollapsibleModule title="Model Limits">
+              <ModelLimitsPanel embedded hideTitle />
+            </CollapsibleModule>
+          </div>
+        </section>
       </main>
     </div>
   );

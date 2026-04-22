@@ -29,6 +29,8 @@ interface Props {
   dailyBuckets: DailyBucket[];
   quotaTimeSeries: QuotaDataPoint[];
   projectScopedComparison?: boolean;
+  hideTitle?: boolean;
+  embedded?: boolean;
 }
 
 function toDayKey(ts: string): string {
@@ -82,6 +84,8 @@ export default function DivergencePanel({
   dailyBuckets,
   quotaTimeSeries,
   projectScopedComparison = false,
+  hideTitle = false,
+  embedded = false,
 }: Props) {
   const rows = useMemo(() => {
     const premiumDaily = buildPremiumDailyDeltas(quotaTimeSeries);
@@ -117,9 +121,9 @@ export default function DivergencePanel({
   if (rows.length === 0) return null;
 
   return (
-    <div className="rounded-lg bg-white border border-gray-200 p-5 space-y-4">
+    <div className={`${embedded ? "bg-white p-5 space-y-4" : "rounded-lg bg-white border border-gray-200 p-5 space-y-4"}`}>
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Transcript vs Billed Divergence</h2>
+        {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Transcript vs Billed Divergence</h2>}
         <p className="text-xs text-gray-500 mt-0.5">
           Where activity and premium quota movement separate, that is usually the real workflow story.
         </p>
