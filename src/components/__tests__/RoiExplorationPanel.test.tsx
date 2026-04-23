@@ -4,7 +4,21 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import RoiExplorationPanel from "@/components/RoiExplorationPanel";
+import RoiExplorationPanel, { buildAxisTicks } from "@/components/RoiExplorationPanel";
+
+describe("buildAxisTicks", () => {
+  it("creates multiple evenly spaced ticks for dense 24h raw charts", () => {
+    const points = Array.from({ length: 96 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2026, 3, 21, 0, index * 15)).toISOString(),
+    }));
+
+    const ticks = buildAxisTicks(points, "24h", "raw");
+
+    expect(ticks).toHaveLength(8);
+    expect(ticks[0]).toBe(points[0].timestamp);
+    expect(ticks.at(-1)).toBe(points.at(-1)?.timestamp);
+  });
+});
 
 describe("RoiExplorationPanel live stats", () => {
   it("defaults the live premium panel open and derives today's stats from intraday data", () => {

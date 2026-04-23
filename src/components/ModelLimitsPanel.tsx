@@ -14,12 +14,16 @@ interface ModelLimit {
 }
 
 interface RateLimitError {
-  ts: string;
   model: string;
   errorCode: string;
   errorMessage: string;
-  rateLimitRemaining: number | null;
-  rateLimitReset: string | null;
+  count: number;
+  latestTs: string;
+  occurrences: Array<{
+    ts: string;
+    rateLimitRemaining: number | null;
+    rateLimitReset: string | null;
+  }>;
 }
 
 export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hideTitle?: boolean; embedded?: boolean }) {
@@ -34,7 +38,7 @@ export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hide
         if (res.ok) {
           const data = await res.json();
           setLimits(data.modelLimits || []);
-          setErrors(data.recentRateLimitErrors || []);
+          setErrors(data.rateLimitErrorGroups || []);
         }
       } catch (error) {
         console.error("Failed to fetch model limits:", error);
@@ -103,27 +107,50 @@ export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hide
       {errors.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-2">
-            Rate Limit Events ({errors.length} in last 7 days)
+            Rate Limit Events ({errors.length} grouped issue{errors.length === 1 ? "" : "s"} in last 7 days)
           </h3>
           <div className="space-y-3 max-h-64 overflow-y-auto">
-            {errors.map((error, idx) => (
-              <div key={idx} className="p-3 bg-amber-50 border border-amber-200 rounded">
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-mono text-sm text-gray-700">{error.model}</span>
-                  <span className="text-xs text-gray-500">
-                    {new Date(error.ts).toLocaleString()}
-                  </span>
-                </div>
-                <div className="text-sm font-semibold text-amber-900 mb-1">
-                  {error.errorCode}: {error.errorMessage}
-                </div>
-                {error.rateLimitRemaining !== null && (
-                  <div className="text-xs text-gray-600">
-                    Remaining: {error.rateLimitRemaining}
-                    {error.rateLimitReset && ` • Reset: ${new Date(error.rateLimitReset).toLocaleTimeString()}`}
+            {errors.map((error) => (
+              <details key={`${error.model}-${error.errorCode}-${error.errorMessage}`} className="rounded border border-amber-200 bg-amber-50">
+                <summary className="cursor-pointer list-none p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm text-gray-700">{error.model}</span>
+                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                          {error.count} event{error.count === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-amber-900">
+                        {error.errorCode}: {error.errorMessage}
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      Latest {new Date(error.latestTs).toLocaleString()}
+                    </span>
                   </div>
-                )}
-              </div>
+                </summary>
+                <div className="border-t border-amber-200 px-3 py-2">
+                  <p className="mb-2 text-[11px] uppercase tracking-wide text-amber-700">Occurrences</p>
+                  <div className="space-y-2">
+                    {error.occurrences.map((occurrence, index) => (
+                      <div
+                        key={`${error.model}-${error.errorCode}-${occurrence.ts}-${index}`}
+                        className="rounded border border-white/80 bg-white/70 px-3 py-2 text-xs text-gray-600"
+                      >
+                        <div className="font-medium text-gray-700">{new Date(occurrence.ts).toLocaleString()}</div>
+                        {(occurrence.rateLimitRemaining !== null || occurrence.rateLimitReset) && (
+                          <div className="mt-1">
+                            {occurrence.rateLimitRemaining !== null && `Remaining: ${occurrence.rateLimitRemaining}`}
+                            {occurrence.rateLimitRemaining !== null && occurrence.rateLimitReset && " • "}
+                            {occurrence.rateLimitReset && `Reset: ${new Date(occurrence.rateLimitReset).toLocaleTimeString()}`}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
             ))}
           </div>
         </div>

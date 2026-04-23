@@ -23,6 +23,7 @@ vi.mock("@/components/QuotaChart", () => ({
 }));
 vi.mock("@/components/RoiExplorationPanel", () => ({
   default: () => <div>RoiExplorationPanel</div>,
+  PremiumUsagePanel: () => <div>PremiumUsagePanel</div>,
 }));
 vi.mock("@/components/ToolBreakdown", () => ({
   default: () => <div>ToolBreakdown</div>,

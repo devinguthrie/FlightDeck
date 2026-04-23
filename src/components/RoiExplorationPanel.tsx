@@ -11,8 +11,6 @@ import {
   Tooltip,
   Legend,
   ReferenceLine,
-  BarChart,
-  Bar,
 } from "recharts";
 
 interface DailyBucket {
@@ -67,6 +65,20 @@ interface Props {
   quotaAgeMinutes: number | null;
   totalRated: number;
   skillStats: SkillStat[];
+  hideTitle?: boolean;
+  embedded?: boolean;
+  showPremiumUsage?: boolean;
+}
+
+interface PremiumUsagePanelProps {
+  dailyBuckets: DailyBucket[];
+  quotaTimeSeries: QuotaDataPoint[];
+  chatEntitlement: number | null;
+  completionsEntitlement: number | null;
+  premiumEntitlement: number | null;
+  quotaResetDate: string | null;
+  intradayBuckets: Array<{ hour: string; transcriptTurns: number; toolCalls: number }>;
+  quotaAgeMinutes: number | null;
   hideTitle?: boolean;
   embedded?: boolean;
 }
@@ -171,7 +183,7 @@ function fmtTime(ts: string): string {
 
 type TimeWindow = "3h" | "12h" | "24h" | "7d" | "14d" | "30d";
 const WIN_LABELS: TimeWindow[] = ["3h", "12h", "24h", "7d", "14d", "30d"];
-type RangeKey = "24h" | "7d" | "30d" | "cycle" | "all";
+type RangeKey = "3h" | "12h" | "24h" | "7d" | "30d" | "cycle" | "all";
 type GranularityKey = "raw" | "hourly" | "daily";
 
 function windowToHours(w: TimeWindow): number {
@@ -192,29 +204,28 @@ function formatTooltipLabel(ts: string): string {
 
 function formatAxisLabel(ts: string, granularity: GranularityKey, range: RangeKey): string {
   const d = new Date(ts);
-  if (range === "24h") {
-    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (range === "3h" || range === "12h" || range === "24h") {
+    return d.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   }
-  if (range === "7d" && granularity !== "daily") {
-    return d.toLocaleDateString("en-US", { weekday: "short" }) +
-      " " +
-      d.toLocaleTimeString("en-US", { hour: "numeric" });
-  }
-  if (granularity === "daily") {
+  if (granularity === "daily" || range === "7d" || range === "30d" || range === "cycle" || range === "all") {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
   if (granularity === "hourly") {
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
-      " " +
-      d.toLocaleTimeString("en-US", { hour: "numeric" });
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
-  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function toRangeStart(range: RangeKey, quotaResetDate: string | null): Date | null {
   const now = new Date();
 
   if (range === "all") return null;
+  if (range === "3h") return new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  if (range === "12h") return new Date(now.getTime() - 12 * 60 * 60 * 1000);
   if (range === "24h") return new Date(now.getTime() - 24 * 60 * 60 * 1000);
   if (range === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   if (range === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -264,10 +275,381 @@ function applyGranularity(data: QuotaDataPoint[], granularity: GranularityKey): 
   return Array.from(buckets.values()).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
-function downsampleForAxis(data: QuotaDataPoint[]): QuotaDataPoint[] {
-  if (data.length <= 30) return data;
-  const step = Math.ceil(data.length / 30);
-  return data.filter((_, i) => i % step === 0 || i === data.length - 1);
+export function buildAxisTicks(
+  data: Array<{ timestamp: string }>,
+  range: RangeKey,
+  granularity: GranularityKey,
+): string[] {
+  if (data.length === 0) return [];
+
+  const targetCount =
+    range === "3h" || range === "12h" || (range === "24h" && granularity !== "daily")
+      ? 8
+      : range === "7d"
+        ? 7
+        : 6;
+
+  if (data.length <= targetCount) {
+    return data.map((point) => point.timestamp);
+  }
+
+  const step = (data.length - 1) / (targetCount - 1);
+  const ticks = new Set<string>();
+
+  for (let i = 0; i < targetCount; i += 1) {
+    const index = Math.round(i * step);
+    ticks.add(data[index].timestamp);
+  }
+
+  ticks.add(data[0].timestamp);
+  ticks.add(data[data.length - 1].timestamp);
+
+  return Array.from(ticks);
+}
+
+export function PremiumUsagePanel({
+  dailyBuckets,
+  quotaTimeSeries,
+  chatEntitlement,
+  completionsEntitlement,
+  premiumEntitlement,
+  quotaResetDate,
+  intradayBuckets,
+  quotaAgeMinutes,
+  hideTitle = false,
+  embedded = false,
+}: PremiumUsagePanelProps) {
+  const [range, setRange] = useState<RangeKey>("7d");
+  const [granularity, setGranularity] = useState<GranularityKey>("raw");
+  const latestBilledPremium =
+    quotaTimeSeries.length > 0
+      ? quotaTimeSeries[quotaTimeSeries.length - 1].premiumUsed
+      : null;
+  const premiumUsagePct =
+    latestBilledPremium !== null && premiumEntitlement !== null && premiumEntitlement > 0
+      ? Math.round((latestBilledPremium / premiumEntitlement) * 100)
+      : null;
+  const freshLabel =
+    quotaAgeMinutes === null
+      ? null
+      : quotaAgeMinutes < 2
+      ? "just now"
+      : quotaAgeMinutes < 60
+      ? `${quotaAgeMinutes}m ago`
+      : `${Math.round(quotaAgeMinutes / 60)}h ago`;
+  const resetLabel = quotaResetDate
+    ? new Date(quotaResetDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : null;
+  const filteredQuotaSeries = useMemo(
+    () => applyRange(quotaTimeSeries, range, quotaResetDate),
+    [quotaTimeSeries, range, quotaResetDate],
+  );
+  const chartData = useMemo(
+    () => applyGranularity(filteredQuotaSeries, granularity),
+    [filteredQuotaSeries, granularity],
+  );
+  const chartDataWithDelta = useMemo(
+    () =>
+      chartData.map((point, index) => ({
+        ...point,
+        delta:
+          index === 0
+            ? null
+            : Math.max(0, point.premiumUsed - chartData[index - 1].premiumUsed),
+      })),
+    [chartData],
+  );
+  const axisTicks = useMemo(
+    () => buildAxisTicks(chartDataWithDelta, range, granularity),
+    [chartDataWithDelta, granularity, range],
+  );
+  const availableSpanDays = useMemo(() => {
+    if (quotaTimeSeries.length < 2) return 0;
+    const sorted = [...quotaTimeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const start = new Date(sorted[0].timestamp).getTime();
+    const end = new Date(sorted[sorted.length - 1].timestamp).getTime();
+    return Math.max(0, (end - start) / (24 * 60 * 60 * 1000));
+  }, [quotaTimeSeries]);
+  const windowPremiumBurn =
+    filteredQuotaSeries.length >= 2
+      ? Math.max(
+          0,
+          filteredQuotaSeries[filteredQuotaSeries.length - 1].premiumUsed - filteredQuotaSeries[0].premiumUsed,
+        )
+      : null;
+  const intradaySnapshots = useMemo(() => {
+    const sorted = [...quotaTimeSeries].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp)
+    );
+    return sorted.map((p, i) => ({
+      premiumUsed: p.premiumUsed,
+      ts: p.timestamp,
+      delta: i === 0 ? null : Math.max(0, p.premiumUsed - sorted[i - 1].premiumUsed),
+    }));
+  }, [quotaTimeSeries]);
+  const todayStats = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayMs = startOfToday.getTime();
+
+    const intradayTodayTurns = intradayBuckets
+      .filter((bucket) => new Date(bucket.hour).getTime() >= startOfTodayMs)
+      .reduce((sum, bucket) => sum + bucket.transcriptTurns, 0);
+
+    const fallbackTodayKey = [
+      startOfToday.getFullYear(),
+      String(startOfToday.getMonth() + 1).padStart(2, "0"),
+      String(startOfToday.getDate()).padStart(2, "0"),
+    ].join("-");
+    const todayBucket = dailyBuckets.find((d) => d.date === fallbackTodayKey) ?? null;
+    const todayTurns =
+      intradayTodayTurns > 0 ? intradayTodayTurns : todayBucket?.requests ?? null;
+
+    const beforeToday = intradaySnapshots.filter(
+      (snapshot) => new Date(snapshot.ts).getTime() < startOfTodayMs
+    );
+    const duringToday = intradaySnapshots.filter(
+      (snapshot) => new Date(snapshot.ts).getTime() >= startOfTodayMs
+    );
+    const baselineSnapshot =
+      beforeToday.length > 0
+        ? beforeToday[beforeToday.length - 1]
+        : duringToday[0] ?? null;
+    const latestTodaySnapshot =
+      duringToday.length > 0 ? duringToday[duringToday.length - 1] : null;
+    const todayPremiumDelta =
+      baselineSnapshot !== null && latestTodaySnapshot !== null
+        ? Math.max(0, latestTodaySnapshot.premiumUsed - baselineSnapshot.premiumUsed)
+        : null;
+    const todayRatio =
+      todayTurns !== null && todayPremiumDelta !== null && todayPremiumDelta > 0
+        ? todayTurns / todayPremiumDelta
+        : null;
+    return { todayTurns, todayPremiumDelta, todayRatio };
+  }, [dailyBuckets, intradayBuckets, intradaySnapshots]);
+
+  return (
+    <div className={`${embedded ? "bg-white p-5 space-y-4" : "rounded-lg bg-white border border-gray-200 p-5 space-y-4"}`}>
+      {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Premium Usage</h2>}
+      <p className="text-[11px] text-gray-400">
+        {chartData.length > 0
+          ? `${chartData.length} point${chartData.length === 1 ? "" : "s"} · ${range} · ${granularity}`
+          : "No quota snapshots yet"}
+      </p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-gray-500">
+          Real usage from GitHub Copilot API · snapshots every 15 min via VS Code extension
+          {freshLabel && <span className="ml-2 text-gray-400">Last updated {freshLabel}</span>}
+        </p>
+        {resetLabel && (
+          <div className="shrink-0 text-right text-[11px] text-gray-500">
+            <span className="font-medium">Quota resets</span>
+            <br />
+            {resetLabel}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-[120px_repeat(3,minmax(0,1fr))]">
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs min-w-[120px]">
+          <div className="font-medium mb-0.5 text-blue-700">Premium</div>
+          <div className="tabular-nums text-blue-700">
+            {latestBilledPremium !== null && premiumEntitlement !== null
+              ? `${latestBilledPremium.toFixed(1)} / ${premiumEntitlement} `
+              : "— "}
+            {premiumUsagePct !== null && <span className="opacity-60">({premiumUsagePct}%)</span>}
+          </div>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/60">
+            <div
+              className="h-full rounded-full bg-blue-400"
+              style={{ width: `${Math.min(100, premiumUsagePct ?? 0)}%` }}
+            />
+          </div>
+        </div>
+        <div className="rounded border border-gray-100 px-2.5 py-2 bg-white min-w-0">
+          <p className="text-[11px] text-gray-500">Transcript turns today</p>
+          <p className="font-semibold text-gray-800 truncate">
+            {todayStats.todayTurns !== null ? todayStats.todayTurns.toLocaleString() : "—"}
+          </p>
+        </div>
+        <div className="rounded border border-gray-100 px-2.5 py-2 bg-white min-w-0">
+          <p className="text-[11px] text-gray-500">Premium burned ({range})</p>
+          <p className="font-semibold text-gray-800 truncate">
+            {windowPremiumBurn !== null ? windowPremiumBurn.toFixed(2) : "—"}
+          </p>
+        </div>
+        <div className="rounded border border-purple-100 px-2.5 py-2 bg-purple-50 min-w-0">
+          <p className="text-[11px] text-purple-600">Turns / Premium today</p>
+          <p className="font-semibold text-purple-800 truncate">
+            {todayStats.todayRatio !== null ? `${todayStats.todayRatio.toFixed(1)}×` : "—"}
+          </p>
+        </div>
+      </div>
+
+      {availableSpanDays < 1 && (
+        <p className="text-[11px] text-gray-400">
+          Only {Math.max(1, Math.round(availableSpanDays * 24))}h of quota history so far, so some ranges will look identical until more snapshots accumulate.
+        </p>
+      )}
+
+      {chartData.length < 2 ? (
+        <p className="py-6 text-center text-xs text-gray-400">
+          Not enough data for this filter yet. Try a wider range or click “Copilot Telemetry: Refresh Now” in VS Code.
+        </p>
+      ) : (
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={chartDataWithDelta} margin={{ top: 4, right: 40, left: -12, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis
+              dataKey="timestamp"
+              ticks={axisTicks}
+              tick={{ fontSize: 11, fill: "#6b7280" }}
+              axisLine={false}
+              tickLine={false}
+              interval={0}
+              minTickGap={24}
+              tickFormatter={(value) => formatAxisLabel(String(value), granularity, range)}
+            />
+            <YAxis yAxisId="usage" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+            <YAxis
+              yAxisId="delta"
+              orientation="right"
+              tick={{ fontSize: 11, fill: "#f59e0b" }}
+              axisLine={false}
+              tickLine={false}
+              allowDecimals={false}
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+              labelFormatter={(value) => formatTooltipLabel(String(value))}
+              formatter={(value: unknown, name: string) => {
+                const num = Number(value);
+                const labelMap: Record<string, string> = {
+                  premiumUsed: "Premium used",
+                  delta: "Burn per interval",
+                  chatUsed: "Chat used",
+                  completionsUsed: "Inline completions",
+                };
+                return [Number.isFinite(num) ? num.toFixed(2) : "-", labelMap[name] ?? name] as [string, string];
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            {premiumEntitlement !== null && premiumEntitlement > 0 && (
+              <ReferenceLine
+                yAxisId="usage"
+                y={premiumEntitlement}
+                stroke="#93c5fd"
+                strokeDasharray="4 4"
+                label={{ value: `Limit ${premiumEntitlement}`, fontSize: 10, fill: "#93c5fd" }}
+              />
+            )}
+            <Line
+              yAxisId="usage"
+              type="monotone"
+              dataKey="premiumUsed"
+              name="Premium used"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+            {chatEntitlement !== null && chatEntitlement > 0 && (
+              <Line
+                yAxisId="usage"
+                type="monotone"
+                dataKey="chatUsed"
+                name="Chat used"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+            )}
+            {completionsEntitlement !== null && completionsEntitlement > 0 && (
+              <Line
+                yAxisId="usage"
+                type="monotone"
+                dataKey="completionsUsed"
+                name="Inline completions"
+                stroke="#10b981"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+            )}
+            <Line
+              yAxisId="delta"
+              type="monotone"
+              dataKey="delta"
+              name="Burn per interval"
+              stroke="#f59e0b"
+              strokeWidth={1.5}
+              dot={false}
+              connectNulls={false}
+              strokeDasharray="3 2"
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+
+      <p className="text-[11px] text-gray-400">
+        Blue = cumulative premium used · amber dashed = burn per interval.
+      </p>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">Range</span>
+          <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
+            {([
+              ["3h", "3h"],
+              ["12h", "12h"],
+              ["24h", "24h"],
+              ["7d", "7d"],
+              ["30d", "30d"],
+              ["cycle", "Cycle"],
+              ["all", "All"],
+            ] as Array<[RangeKey, string]>).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRange(key)}
+                className={`px-2.5 py-1 text-xs rounded ${
+                  range === key
+                    ? "bg-white border border-gray-300 text-gray-800"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">View</span>
+          <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
+            {([
+              ["raw", "Raw"],
+              ["hourly", "Hourly"],
+              ["daily", "Daily"],
+            ] as Array<[GranularityKey, string]>).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGranularity(key)}
+                className={`px-2.5 py-1 text-xs rounded ${
+                  granularity === key
+                    ? "bg-white border border-gray-300 text-gray-800"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -295,71 +677,17 @@ export default function RoiExplorationPanel({
   skillStats,
   hideTitle = false,
   embedded = false,
+  showPremiumUsage = true,
 }: Props) {
   const hasQualitySignal = totalRated >= 5;
   const trustScore = trustScoreFromAge(quotaAgeMinutes);
-  const [now] = useState(() => Date.now());
-  const [range, setRange] = useState<RangeKey>("7d");
-  const [granularity, setGranularity] = useState<GranularityKey>("raw");
   const latestBilledPremium =
     quotaTimeSeries.length > 0
       ? quotaTimeSeries[quotaTimeSeries.length - 1].premiumUsed
       : null;
-  const premiumUsagePct =
-    latestBilledPremium !== null && premiumEntitlement !== null && premiumEntitlement > 0
-      ? Math.round((latestBilledPremium / premiumEntitlement) * 100)
-      : null;
-  const freshLabel =
-    quotaAgeMinutes === null
-      ? null
-      : quotaAgeMinutes < 2
-      ? "just now"
-      : quotaAgeMinutes < 60
-      ? `${quotaAgeMinutes}m ago`
-      : `${Math.round(quotaAgeMinutes / 60)}h ago`;
-  const resetLabel = quotaResetDate
-    ? new Date(quotaResetDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : null;
   const cycleTurnsPerPremium =
     latestBilledPremium !== null && latestBilledPremium > 0
       ? cycleAssistantTurns / latestBilledPremium
-      : null;
-  const filteredQuotaSeries = useMemo(
-    () => applyRange(quotaTimeSeries, range, quotaResetDate),
-    [quotaTimeSeries, range, quotaResetDate],
-  );
-  const chartData = useMemo(
-    () => applyGranularity(filteredQuotaSeries, granularity),
-    [filteredQuotaSeries, granularity],
-  );
-  const chartDataWithDelta = useMemo(
-    () =>
-      chartData.map((point, index) => ({
-        ...point,
-        delta:
-          index === 0
-            ? null
-            : Math.max(0, point.premiumUsed - chartData[index - 1].premiumUsed),
-      })),
-    [chartData],
-  );
-  const axisLabels = useMemo(
-    () => new Set(downsampleForAxis(chartDataWithDelta).map((d) => d.timestamp)),
-    [chartDataWithDelta],
-  );
-  const availableSpanDays = useMemo(() => {
-    if (quotaTimeSeries.length < 2) return 0;
-    const sorted = [...quotaTimeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const start = new Date(sorted[0].timestamp).getTime();
-    const end = new Date(sorted[sorted.length - 1].timestamp).getTime();
-    return Math.max(0, (end - start) / (24 * 60 * 60 * 1000));
-  }, [quotaTimeSeries]);
-  const windowPremiumBurn =
-    filteredQuotaSeries.length >= 2
-      ? Math.max(
-          0,
-          filteredQuotaSeries[filteredQuotaSeries.length - 1].premiumUsed - filteredQuotaSeries[0].premiumUsed,
-        )
       : null;
 
   // ─── 30-day efficiency trend with 7d MA ───────────────────────────────────
@@ -447,61 +775,6 @@ export default function RoiExplorationPanel({
     return lifts.length > 0 ? lifts.slice(0, 3) : null;
   }, [premiumTrend]);
 
-  // ─── All premium snapshots (full history, windowed in intradaySlice) ────────────────────
-  const intradaySnapshots = useMemo(() => {
-    const sorted = [...quotaTimeSeries].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp)
-    );
-    return sorted.map((p, i) => ({
-      time: fmtTime(p.timestamp),
-      premiumUsed: p.premiumUsed,
-      ts: p.timestamp,
-      delta: i === 0 ? null : Math.max(0, p.premiumUsed - sorted[i - 1].premiumUsed),
-    }));
-  }, [quotaTimeSeries]);
-
-  // ─── Today's gap stats (local calendar day, not rolling 24h) ─────────────────────
-  const todayStats = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const startOfTodayMs = startOfToday.getTime();
-
-    const intradayTodayTurns = intradayBuckets
-      .filter((bucket) => new Date(bucket.hour).getTime() >= startOfTodayMs)
-      .reduce((sum, bucket) => sum + bucket.transcriptTurns, 0);
-
-    const fallbackTodayKey = [
-      startOfToday.getFullYear(),
-      String(startOfToday.getMonth() + 1).padStart(2, "0"),
-      String(startOfToday.getDate()).padStart(2, "0"),
-    ].join("-");
-    const todayBucket = dailyBuckets.find((d) => d.date === fallbackTodayKey) ?? null;
-    const todayTurns =
-      intradayTodayTurns > 0 ? intradayTodayTurns : todayBucket?.requests ?? null;
-
-    const beforeToday = intradaySnapshots.filter(
-      (snapshot) => new Date(snapshot.ts).getTime() < startOfTodayMs
-    );
-    const duringToday = intradaySnapshots.filter(
-      (snapshot) => new Date(snapshot.ts).getTime() >= startOfTodayMs
-    );
-    const baselineSnapshot =
-      beforeToday.length > 0
-        ? beforeToday[beforeToday.length - 1]
-        : duringToday[0] ?? null;
-    const latestTodaySnapshot =
-      duringToday.length > 0 ? duringToday[duringToday.length - 1] : null;
-    const todayPremiumDelta =
-      baselineSnapshot !== null && latestTodaySnapshot !== null
-        ? Math.max(0, latestTodaySnapshot.premiumUsed - baselineSnapshot.premiumUsed)
-        : null;
-    const todayRatio =
-      todayTurns !== null && todayPremiumDelta !== null && todayPremiumDelta > 0
-        ? todayTurns / todayPremiumDelta
-        : null;
-    return { todayTurns, todayPremiumDelta, todayRatio };
-  }, [dailyBuckets, intradayBuckets, intradaySnapshots]);
-
   // ─── Top skills by quality efficiency ─────────────────────────────────────
   const topSkillsByEfficiency = useMemo(
     () =>
@@ -514,35 +787,6 @@ export default function RoiExplorationPanel({
     [hasQualitySignal, skillStats]
   );
 
-  const [trendWindow, setTrendWindow] = useState<TimeWindow>("24h");
-
-  const trendSlice = useMemo(
-    () => premiumTrend.slice(-( windowToDays(trendWindow) ?? 7)),
-    [premiumTrend, trendWindow]
-  );
-
-  // ─── Hourly turns/premium trend (for sub-day windows) ─────────────────────
-  const hourlyTrend = useMemo(() => {
-    const premiumByHour = buildPremiumHourlyDeltas(quotaTimeSeries);
-    return intradayBuckets.map((bucket) => {
-      const billedPremium = premiumByHour[bucket.hour] ?? null;
-      const turnsPerPremium =
-        billedPremium && billedPremium > 0 ? bucket.transcriptTurns / billedPremium : null;
-      return {
-        ...bucket,
-        label: fmtHourLabel(bucket.hour),
-        billedPremium,
-        turnsPerPremium,
-      };
-    });
-  }, [quotaTimeSeries, intradayBuckets]);
-
-  const hourlyTrendSlice = useMemo(() => {
-    const hours = windowToHours(trendWindow);
-    const cutoff = now - hours * 60 * 60 * 1000;
-    return hourlyTrend.filter((r) => new Date(r.hour).getTime() >= cutoff);
-  }, [hourlyTrend, trendWindow, now]);
-
   const trendPct =
     recent7avg !== null && prev7avg !== null && prev7avg > 0
       ? ((recent7avg - prev7avg) / prev7avg) * 100
@@ -550,27 +794,12 @@ export default function RoiExplorationPanel({
 
   return (
     <div className={`${embedded ? "bg-white p-5 space-y-5" : "rounded-lg bg-white border border-gray-200 p-5 space-y-5"}`}>
-      {/* Header */}
-      <div>
-        {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">ROI Exploration</h2>}
-        <p className="text-xs text-gray-500 mt-0.5">
-          Transcript turns per billed premium — find what makes the lines diverge
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        <span className="font-medium text-slate-800">Live now:</span> premium burn, work depth, quota trust, and trend analysis.
-        {!hasQualitySignal ? (
-          <span> Quality-based ROI stays muted until at least 5 sessions are rated.</span>
-        ) : (
-          <span> Quality ROI active from {totalRated} rated session{totalRated === 1 ? "" : "s"}.</span>
-        )}
-      </div>
+      {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">ROI Exploration</h2>}
 
       {/* Core metric row */}
       <div>
-        <p className="px-1 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Key metrics</p>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <p className="px-1 pb-1.5 text-[11px] font-medium text-gray-500 uppercase tracking-wide">Key metrics</p>
+        <div className="grid grid-cols-2 min-[900px]:grid-cols-4 gap-2.5">
           <Metric
             label="Turns / Premium (Cycle)"
             value={cycleTurnsPerPremium !== null ? cycleTurnsPerPremium.toFixed(2) : "-"}
@@ -600,8 +829,8 @@ export default function RoiExplorationPanel({
         </div>
       </div>
       <div>
-        <p className="px-1 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">Cost &amp; efficiency signals</p>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <p className="px-1 pb-1.5 text-[11px] font-medium text-gray-500 uppercase tracking-wide">Cost &amp; efficiency signals</p>
+        <div className="grid grid-cols-2 min-[900px]:grid-cols-4 gap-2.5">
           <Metric
             label="Premium / User Prompt"
             value={premiumBurnPerUserPrompt !== null ? premiumBurnPerUserPrompt.toFixed(3) : "-"}
@@ -624,229 +853,20 @@ export default function RoiExplorationPanel({
           />
         </div>
       </div>
-
-      <details open className="border border-gray-100 rounded-lg">
-        <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
-          Premium usage
-          <span className="ml-2 text-[11px] text-gray-400 font-normal normal-case tracking-normal">
-            {chartData.length > 0
-              ? `· ${chartData.length} points · ${range} · ${granularity}`
-              : "· no quota snapshots yet"}
-          </span>
-        </summary>
-        <div className="p-3 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-xs text-gray-500">
-              Real usage from GitHub Copilot API · snapshots every 15 min via VS Code extension
-              {freshLabel && <span className="ml-2 text-gray-400">Last updated {freshLabel}</span>}
-            </p>
-            {resetLabel && (
-              <div className="shrink-0 text-right text-[11px] text-gray-500">
-                <span className="font-medium">Quota resets</span>
-                <br />
-                {resetLabel}
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-[120px_repeat(3,minmax(0,1fr))]">
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs min-w-[120px]">
-              <div className="font-medium mb-0.5 text-blue-700">Premium</div>
-              <div className="tabular-nums text-blue-700">
-                {latestBilledPremium !== null && premiumEntitlement !== null
-                  ? `${latestBilledPremium.toFixed(1)} / ${premiumEntitlement} `
-                  : "— "}
-                {premiumUsagePct !== null && <span className="opacity-60">({premiumUsagePct}%)</span>}
-              </div>
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/60">
-                <div
-                  className="h-full rounded-full bg-blue-400"
-                  style={{ width: `${Math.min(100, premiumUsagePct ?? 0)}%` }}
-                />
-              </div>
-            </div>
-            <div className="rounded border border-gray-100 px-2.5 py-2 bg-white min-w-0">
-              <p className="text-[11px] text-gray-500">Transcript turns today</p>
-              <p className="font-semibold text-gray-800 truncate">
-                {todayStats.todayTurns !== null ? todayStats.todayTurns.toLocaleString() : "—"}
-              </p>
-            </div>
-            <div className="rounded border border-gray-100 px-2.5 py-2 bg-white min-w-0">
-              <p className="text-[11px] text-gray-500">Premium burned ({range})</p>
-              <p className="font-semibold text-gray-800 truncate">
-                {windowPremiumBurn !== null ? windowPremiumBurn.toFixed(2) : "—"}
-              </p>
-            </div>
-            <div className="rounded border border-purple-100 px-2.5 py-2 bg-purple-50 min-w-0">
-              <p className="text-[11px] text-purple-600">Turns / Premium today</p>
-              <p className="font-semibold text-purple-800 truncate">
-                {todayStats.todayRatio !== null ? `${todayStats.todayRatio.toFixed(1)}×` : "—"}
-              </p>
-            </div>
-          </div>
-
-          {availableSpanDays < 1 && (
-            <p className="text-[11px] text-gray-400">
-              Only {Math.max(1, Math.round(availableSpanDays * 24))}h of quota history so far, so some ranges will look identical until more snapshots accumulate.
-            </p>
-          )}
-
-          {chartData.length < 2 ? (
-            <p className="py-6 text-center text-xs text-gray-400">
-              Not enough data for this filter yet. Try a wider range or click “Copilot Telemetry: Refresh Now” in VS Code.
-            </p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartDataWithDelta} margin={{ top: 4, right: 40, left: -12, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis
-                  dataKey="timestamp"
-                  tick={{ fontSize: 11, fill: "#6b7280" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                  tickFormatter={(value) =>
-                    axisLabels.has(String(value)) ? formatAxisLabel(String(value), granularity, range) : ""
-                  }
-                />
-                <YAxis yAxisId="usage" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <YAxis
-                  yAxisId="delta"
-                  orientation="right"
-                  tick={{ fontSize: 11, fill: "#f59e0b" }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                  labelFormatter={(value) => formatTooltipLabel(String(value))}
-                  formatter={(value: unknown, name: string) => {
-                    const num = Number(value);
-                    const labelMap: Record<string, string> = {
-                      premiumUsed: "Premium used",
-                      delta: "Burn per interval",
-                      chatUsed: "Chat used",
-                      completionsUsed: "Inline completions",
-                    };
-                    return [Number.isFinite(num) ? num.toFixed(2) : "-", labelMap[name] ?? name] as [string, string];
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                {premiumEntitlement !== null && premiumEntitlement > 0 && (
-                  <ReferenceLine
-                    yAxisId="usage"
-                    y={premiumEntitlement}
-                    stroke="#93c5fd"
-                    strokeDasharray="4 4"
-                    label={{ value: `Limit ${premiumEntitlement}`, fontSize: 10, fill: "#93c5fd" }}
-                  />
-                )}
-                <Line
-                  yAxisId="usage"
-                  type="monotone"
-                  dataKey="premiumUsed"
-                  name="Premium used"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                {chatEntitlement !== null && chatEntitlement > 0 && (
-                  <Line
-                    yAxisId="usage"
-                    type="monotone"
-                    dataKey="chatUsed"
-                    name="Chat used"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                )}
-                {completionsEntitlement !== null && completionsEntitlement > 0 && (
-                  <Line
-                    yAxisId="usage"
-                    type="monotone"
-                    dataKey="completionsUsed"
-                    name="Inline completions"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                )}
-                <Line
-                  yAxisId="delta"
-                  type="monotone"
-                  dataKey="delta"
-                  name="Burn per interval"
-                  stroke="#f59e0b"
-                  strokeWidth={1.5}
-                  dot={false}
-                  connectNulls={false}
-                  strokeDasharray="3 2"
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-
-          <p className="text-[11px] text-gray-400">
-            Blue = cumulative premium used · amber dashed = burn per interval.
-          </p>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] uppercase tracking-wide text-gray-400">Range</span>
-              <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
-                {([
-                  ["24h", "24h"],
-                  ["7d", "7d"],
-                  ["30d", "30d"],
-                  ["cycle", "Cycle"],
-                  ["all", "All"],
-                ] as Array<[RangeKey, string]>).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setRange(key)}
-                    className={`px-2.5 py-1 text-xs rounded ${
-                      range === key
-                        ? "bg-white border border-gray-300 text-gray-800"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] uppercase tracking-wide text-gray-400">View</span>
-              <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
-                {([
-                  ["raw", "Raw"],
-                  ["hourly", "Hourly"],
-                  ["daily", "Daily"],
-                ] as Array<[GranularityKey, string]>).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setGranularity(key)}
-                    className={`px-2.5 py-1 text-xs rounded ${
-                      granularity === key
-                        ? "bg-white border border-gray-300 text-gray-800"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
+      {showPremiumUsage && (
+        <PremiumUsagePanel
+          embedded
+          hideTitle
+          dailyBuckets={dailyBuckets}
+          quotaTimeSeries={quotaTimeSeries}
+          chatEntitlement={chatEntitlement}
+          completionsEntitlement={completionsEntitlement}
+          premiumEntitlement={premiumEntitlement}
+          quotaResetDate={quotaResetDate}
+          intradayBuckets={intradayBuckets}
+          quotaAgeMinutes={quotaAgeMinutes}
+        />
+      )}
 
       {/* Best ratio days callout */}
       {bestDays.length > 0 && (
@@ -874,11 +894,7 @@ export default function RoiExplorationPanel({
       {/* Skill insight cards */}
       {((skillEfficiencyInsight && skillEfficiencyInsight.length > 0) ||
         topSkillsByEfficiency.length > 0) && (
-        <details open className="border border-gray-100 rounded-lg">
-          <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
-            Skill analysis
-          </summary>
-          <div className="p-3 grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {skillEfficiencyInsight && skillEfficiencyInsight.length > 0 && (
             <div className="border border-green-100 rounded-lg bg-green-50 px-4 py-3">
               <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2">
@@ -927,131 +943,7 @@ export default function RoiExplorationPanel({
             </div>
           )}
         </div>
-        </details>
       )}
-
-      {/* Charts */}
-      <details open className="border border-gray-100 rounded-lg">
-        <summary className="px-3 py-2 text-xs font-medium text-gray-500 cursor-pointer select-none uppercase tracking-wide">
-          Premium efficiency trend
-        </summary>
-        <div className="p-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Premium efficiency trend ({trendWindow})
-            </p>
-            <div className="flex gap-1">
-              {WIN_LABELS.map((w) => (
-                <button
-                  key={w}
-                  onClick={() => setTrendWindow(w)}
-                  className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
-                    trendWindow === w
-                      ? "bg-purple-600 text-white"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >
-                  {w}
-                </button>
-              ))}
-            </div>
-          </div>
-          {windowToDays(trendWindow) === null ? (
-            /* Sub-day mode: transcript-driven hourly turns/premium */
-            hourlyTrendSlice.length === 0 ? (
-              <p className="text-xs text-gray-400 py-8 text-center">
-                No hourly data in the last {trendWindow}
-              </p>
-            ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={hourlyTrendSlice} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                    formatter={(value: unknown, name: string) => {
-                      if (value === null || value === undefined) return ["-", name];
-                      const num = Number(value);
-                      return [Number.isFinite(num) ? num.toFixed(2) : "-", name];
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="transcriptTurns" name="Transcript Turns" stroke="#3b82f6" strokeWidth={2} dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="billedPremium" name="Billed Premium" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="turnsPerPremium" name="Turns per Premium" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            )
-          ) : premiumTrend.length === 0 ? (
-            <p className="text-xs text-gray-400 py-8 text-center">
-              No quota + transcript overlap yet
-            </p>
-          ) : premiumTrend.filter((d) => d.turnsPerPremium !== null).length < 2 ? (
-            <div className="py-8 text-center space-y-1">
-              <p className="text-sm text-gray-600">Only one overlap day so far</p>
-              <p className="text-xs text-gray-400">
-                The trend becomes meaningful with 2+ days of billed snapshots.
-              </p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={trendSlice} margin={{ top: 2, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: "#6b7280" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                  formatter={(value: unknown, name: string) => {
-                    if (value === null || value === undefined) return ["-", name];
-                    const num = Number(value);
-                    const lbl =
-                      name === "turnsPerPremium"
-                        ? "Turns/Premium"
-                        : name === "ma7"
-                        ? "7d MA"
-                        : name === "transcriptTurns"
-                        ? "Transcript Turns"
-                        : name === "billedPremium"
-                        ? "Billed Premium"
-                        : name;
-                    return [Number.isFinite(num) ? num.toFixed(2) : "-", lbl];
-                  }}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v) =>
-                    v === "turnsPerPremium"
-                      ? "Turns/Premium"
-                      : v === "ma7"
-                      ? "7d MA"
-                      : v === "transcriptTurns"
-                      ? "Transcript Turns"
-                      : v === "billedPremium"
-                      ? "Billed Premium"
-                      : v
-                  }
-                />
-                <Line type="monotone" dataKey="transcriptTurns" stroke="#3b82f6" strokeWidth={1.5} dot={false} connectNulls={false} strokeDasharray="4 2" />
-                <Line type="monotone" dataKey="billedPremium" stroke="#10b981" strokeWidth={1.5} dot={false} connectNulls={false} strokeDasharray="4 2" />
-                <Line type="monotone" dataKey="turnsPerPremium" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls={false} />
-                <Line type="monotone" dataKey="ma7" stroke="#7c3aed" strokeWidth={1} dot={false} connectNulls={false} strokeDasharray="2 2" opacity={0.6} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-          <p className="text-[11px] text-gray-400 mt-1">
-            {windowToDays(trendWindow) === null
-              ? "Purple = turns/premium · blue = transcript turns · green = billed premium (hourly)"
-              : "Purple solid = turns/premium · dashed = 7d MA · blue/green = raw components"}
-          </p>
-        </div>
-      </details>
     </div>
   );
 }
@@ -1082,19 +974,19 @@ function Metric({
 
   return (
     <div
-      className={`rounded-lg border px-3 py-2.5 ${
+      className={`rounded-lg border px-2.5 py-2 ${
         highlight ? "border-purple-200 bg-purple-50" : "border-gray-200 bg-gray-50"
       }`}
     >
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-[10px] uppercase tracking-wide text-gray-500">{label}</p>
       <p
-        className={`text-lg font-semibold leading-none mt-1 ${
+        className={`mt-1 text-base font-semibold leading-none md:text-lg ${
           highlight ? "text-purple-700" : "text-gray-900"
         }`}
       >
         {value}
       </p>
-      <p className={`text-[11px] mt-1 ${trend != null ? trendColor : "text-gray-500"}`}>
+      <p className={`mt-1 text-[10px] leading-tight ${trend != null ? trendColor : "text-gray-500"}`}>
         {sub}
       </p>
     </div>

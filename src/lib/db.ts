@@ -773,3 +773,64 @@ export function getRecentRateLimitErrors(): Array<{
     rateLimitReset: r.rate_limit_reset_at as string | null,
   }));
 }
+
+export function getRecentRateLimitErrorSummaries(): Array<{
+  model: string;
+  errorCode: string;
+  errorMessage: string;
+  count: number;
+  latestTs: string;
+  occurrences: Array<{
+    ts: string;
+    rateLimitRemaining: number | null;
+    rateLimitReset: string | null;
+  }>;
+}> {
+  const groups = new Map<string, {
+    model: string;
+    errorCode: string;
+    errorMessage: string;
+    count: number;
+    latestTs: string;
+    occurrences: Array<{
+      ts: string;
+      rateLimitRemaining: number | null;
+      rateLimitReset: string | null;
+    }>;
+  }>();
+
+  for (const error of getRecentRateLimitErrors()) {
+    const key = `${error.model}::${error.errorCode}::${error.errorMessage}`;
+    const existing = groups.get(key);
+    const occurrence = {
+      ts: error.ts,
+      rateLimitRemaining: error.rateLimitRemaining,
+      rateLimitReset: error.rateLimitReset,
+    };
+
+    if (!existing) {
+      groups.set(key, {
+        model: error.model,
+        errorCode: error.errorCode,
+        errorMessage: error.errorMessage,
+        count: 1,
+        latestTs: error.ts,
+        occurrences: [occurrence],
+      });
+      continue;
+    }
+
+    existing.count += 1;
+    if (error.ts > existing.latestTs) {
+      existing.latestTs = error.ts;
+    }
+    existing.occurrences.push(occurrence);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      occurrences: [...group.occurrences].sort((a, b) => b.ts.localeCompare(a.ts)),
+    }))
+    .sort((a, b) => b.latestTs.localeCompare(a.latestTs));
+}

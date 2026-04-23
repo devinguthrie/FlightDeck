@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import PaginationControls from "@/components/PaginationControls";
 import {
   BarChart,
   Bar,
@@ -45,6 +46,7 @@ const SKILL_READERS = new Set([
   // tools commonly used to read SKILL.md files
 ]);
 const SKILL_PAGE_SIZE = 8;
+const SKILL_PAGE_SIZE_OPTIONS = [8, 16, 24, 40];
 
 function isCoreSkillTool(name: string): boolean {
   return SKILL_READERS.has(name);
@@ -53,15 +55,16 @@ function isCoreSkillTool(name: string): boolean {
 export default function ToolBreakdown({ topTools, skillStats, totalRated }: Props) {
   const hasQualitySignal = totalRated >= 5;
   const [skillPage, setSkillPage] = useState(0);
-  const skillPageCount = Math.max(1, Math.ceil(skillStats.length / SKILL_PAGE_SIZE));
+  const [skillPageSize, setSkillPageSize] = useState(SKILL_PAGE_SIZE);
+  const skillPageCount = Math.max(1, Math.ceil(skillStats.length / skillPageSize));
   const currentSkillPage = Math.min(skillPage, skillPageCount - 1);
   const paginatedSkillStats = useMemo(
     () =>
       skillStats.slice(
-        currentSkillPage * SKILL_PAGE_SIZE,
-        currentSkillPage * SKILL_PAGE_SIZE + SKILL_PAGE_SIZE
+        currentSkillPage * skillPageSize,
+        currentSkillPage * skillPageSize + skillPageSize
       ),
-    [currentSkillPage, skillStats]
+    [currentSkillPage, skillPageSize, skillStats]
   );
 
   return (
@@ -204,32 +207,20 @@ export default function ToolBreakdown({ topTools, skillStats, totalRated }: Prop
                 </tbody>
               </table>
             </div>
-            {skillStats.length > SKILL_PAGE_SIZE && (
-              <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Page {currentSkillPage + 1} of {skillPageCount} · Showing{" "}
-                  {currentSkillPage * SKILL_PAGE_SIZE + 1}-
-                  {Math.min(skillStats.length, (currentSkillPage + 1) * SKILL_PAGE_SIZE)} of {skillStats.length}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSkillPage((page) => Math.max(0, page - 1))}
-                    disabled={currentSkillPage === 0}
-                    className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSkillPage((page) => Math.min(skillPageCount - 1, page + 1))}
-                    disabled={currentSkillPage >= skillPageCount - 1}
-                    className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+            {skillStats.length > skillPageSize && (
+              <PaginationControls
+                page={currentSkillPage}
+                pageCount={skillPageCount}
+                pageSize={skillPageSize}
+                totalItems={skillStats.length}
+                itemLabel="skills"
+                pageSizeOptions={SKILL_PAGE_SIZE_OPTIONS}
+                onPageChange={setSkillPage}
+                onPageSizeChange={(nextPageSize) => {
+                  setSkillPageSize(nextPageSize);
+                  setSkillPage(0);
+                }}
+              />
             )}
           </>
         )}

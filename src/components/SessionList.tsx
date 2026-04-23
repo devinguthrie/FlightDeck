@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import PaginationControls from "@/components/PaginationControls";
 
 interface Session {
   sessionId: string;
@@ -27,6 +28,7 @@ interface Props {
   embedded?: boolean;
 }
 const SESSION_PAGE_SIZE = 25;
+const SESSION_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 function StarRating({
   value,
@@ -166,6 +168,7 @@ function RatingCell({
 export default function SessionList({ sessions, onRated, hideTitle = false, embedded = false }: Props) {
   const [showUnratedOnly, setShowUnratedOnly] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(SESSION_PAGE_SIZE);
   const [now] = useState(() => Date.now());
 
   const thresholds = useMemo(() => {
@@ -191,11 +194,11 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
   const filtered = showUnratedOnly
     ? sessions.filter((s) => !s.rating)
     : sessions;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / SESSION_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
   const paginatedSessions = filtered.slice(
-    currentPage * SESSION_PAGE_SIZE,
-    currentPage * SESSION_PAGE_SIZE + SESSION_PAGE_SIZE
+    currentPage * pageSize,
+    currentPage * pageSize + pageSize
   );
 
   function sessionFlags(s: Session): string[] {
@@ -352,32 +355,20 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
               ))}
             </tbody>
           </table>
-          {filtered.length > SESSION_PAGE_SIZE && (
-            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-              <span>
-                Page {currentPage + 1} of {pageCount} · Showing{" "}
-                {currentPage * SESSION_PAGE_SIZE + 1}-
-                {Math.min(filtered.length, (currentPage + 1) * SESSION_PAGE_SIZE)} of {filtered.length} sessions
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage((value) => Math.max(0, value - 1))}
-                  disabled={currentPage === 0}
-                  className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
-                  disabled={currentPage >= pageCount - 1}
-                  className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+          {filtered.length > pageSize && (
+            <PaginationControls
+              page={currentPage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              totalItems={filtered.length}
+              itemLabel="sessions"
+              pageSizeOptions={SESSION_PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => {
+                setPageSize(nextPageSize);
+                setPage(0);
+              }}
+            />
           )}
         </div>
       )}

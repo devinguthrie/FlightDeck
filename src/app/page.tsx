@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import DivergencePanel from "@/components/DivergencePanel";
 import ProjectionChart from "@/components/ProjectionChart";
-import RoiExplorationPanel from "@/components/RoiExplorationPanel";
+import RoiExplorationPanel, { PremiumUsagePanel } from "@/components/RoiExplorationPanel";
 import ToolBreakdown from "@/components/ToolBreakdown";
 import SessionList from "@/components/SessionList";
 import ConfigPanel from "@/components/ConfigPanel";
 import TokenVolumeChart from "@/components/TokenVolumeChart";
 import { ModelLimitsPanel } from "@/components/ModelLimitsPanel";
+import PaginationControls from "@/components/PaginationControls";
 import type { PlanKey } from "@/lib/pricing";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -249,20 +250,20 @@ function CollapsibleSection({
         aria-expanded={open}
         aria-label={`${open ? "Collapse" : "Expand"} ${title}`}
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-start gap-2 px-5 py-4 text-left transition-colors hover:bg-gray-50"
+        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50"
       >
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
+        </div>
         <svg
-          className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m9 5 7 7-7 7" />
         </svg>
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">{title}</h2>
-          {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
-        </div>
       </button>
 
       {open && <div className="border-t border-gray-100 px-5 py-5">{children}</div>}
@@ -271,6 +272,7 @@ function CollapsibleSection({
 }
 
 const TOOL_LATENCY_PAGE_SIZE = 10;
+const TOOL_LATENCY_PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 function CollapsibleModule({
   title,
@@ -325,6 +327,7 @@ export default function Dashboard() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
   const [workspaceList, setWorkspaceList] = useState<string[]>([]);
   const [toolLatencyPage, setToolLatencyPage] = useState(0);
+  const [toolLatencyPageSize, setToolLatencyPageSize] = useState(TOOL_LATENCY_PAGE_SIZE);
 
   const loadStats = useCallback(async () => {
     try {
@@ -621,11 +624,11 @@ export default function Dashboard() {
     quota?.available === true
       ? inferPlanKey(quota.copilotPlan, quota.premiumEntitlement)
       : null;
-  const toolLatencyPageCount = Math.max(1, Math.ceil(stats.toolLatencies.length / TOOL_LATENCY_PAGE_SIZE));
+  const toolLatencyPageCount = Math.max(1, Math.ceil(stats.toolLatencies.length / toolLatencyPageSize));
   const currentToolLatencyPage = Math.min(toolLatencyPage, toolLatencyPageCount - 1);
   const paginatedToolLatencies = stats.toolLatencies.slice(
-    currentToolLatencyPage * TOOL_LATENCY_PAGE_SIZE,
-    currentToolLatencyPage * TOOL_LATENCY_PAGE_SIZE + TOOL_LATENCY_PAGE_SIZE
+    currentToolLatencyPage * toolLatencyPageSize,
+    currentToolLatencyPage * toolLatencyPageSize + toolLatencyPageSize
   );
   const lowConfidenceProjection =
     projectionConfidenceLabel.startsWith("Low confidence") ||
@@ -840,95 +843,95 @@ export default function Dashboard() {
           </div>
         </CollapsibleSection>
 
-        <section aria-label="Diagnostics" className="space-y-4">
-          <div className="px-1">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Diagnostics</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Trend, efficiency, and usage breakdowns that explain what changed.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <CollapsibleModule title="Premium Usage Projection">
-              <ProjectionChart
-                embedded
-                hideTitle
-                points={effectiveProjectionPoints}
-                planQuota={effectiveQuota}
-                exhaustionDate={projectedWithinCycle && effectiveProjectedExhaustionDate
-                  ? (() => {
-                      const year = effectiveProjectedExhaustionDate.getFullYear();
-                      const month = String(effectiveProjectedExhaustionDate.getMonth() + 1).padStart(2, "0");
-                      const day = String(effectiveProjectedExhaustionDate.getDate()).padStart(2, "0");
-                      return `${year}-${month}-${day}`;
-                    })()
-                  : null}
-                dailyBurnRate={effectiveDailyBurn}
-                avgDays={avgDays}
-                onAvgDaysChange={setAvgDays}
-                sourceLabel={quota?.available ? "Billed premium usage" : "Transcript-estimated turns"}
-                coverageDays={billedCoverageDays}
-                confidenceLabel={projectionConfidenceLabel}
-              />
-            </CollapsibleModule>
+        <div className="space-y-4">
+          <CollapsibleModule title="Premium Calls & ROI">
+            <RoiExplorationPanel
+              embedded
+              hideTitle
+              showPremiumUsage={false}
+              dailyBuckets={stats.dailyBuckets}
+              quotaTimeSeries={quota?.timeSeries ?? []}
+              chatEntitlement={quota?.chatEntitlement ?? null}
+              completionsEntitlement={quota?.completionsEntitlement ?? null}
+              premiumEntitlement={quota?.premiumEntitlement ?? null}
+              quotaResetDate={quota?.quotaResetDate ?? null}
+              intradayBuckets={stats.intradayBuckets}
+              cycleUserTurns={stats.cycleUserTurns}
+              cycleAssistantTurns={stats.cycleAssistantTurns}
+              cycleToolCalls={stats.cycleToolCalls}
+              cycleDurationMinutes={stats.cycleDurationMinutes}
+              cycleActiveMinutes={stats.cycleActiveMinutes}
+              premiumBurnPerUserPrompt={stats.premiumBurnPerUserPrompt}
+              toolOverheadRatio={stats.toolOverheadRatio}
+              promptEfficiencyPer100Turns={stats.promptEfficiencyPer100Turns}
+              qualityToolOverheadCorrelation={stats.qualityToolOverheadCorrelation}
+              marginalQualityCurve={stats.marginalQualityCurve}
+              quotaAgeMinutes={quota?.ageMinutes ?? null}
+              totalRated={stats.totalRated}
+              skillStats={stats.skillStats}
+            />
+          </CollapsibleModule>
 
-            <CollapsibleModule title="Premium Calls & ROI">
-              <RoiExplorationPanel
-                embedded
-                hideTitle
-                dailyBuckets={stats.dailyBuckets}
-                quotaTimeSeries={quota?.timeSeries ?? []}
-                chatEntitlement={quota?.chatEntitlement ?? null}
-                completionsEntitlement={quota?.completionsEntitlement ?? null}
-                premiumEntitlement={quota?.premiumEntitlement ?? null}
-                quotaResetDate={quota?.quotaResetDate ?? null}
-                intradayBuckets={stats.intradayBuckets}
-                cycleUserTurns={stats.cycleUserTurns}
-                cycleAssistantTurns={stats.cycleAssistantTurns}
-                cycleToolCalls={stats.cycleToolCalls}
-                cycleDurationMinutes={stats.cycleDurationMinutes}
-                cycleActiveMinutes={stats.cycleActiveMinutes}
-                premiumBurnPerUserPrompt={stats.premiumBurnPerUserPrompt}
-                toolOverheadRatio={stats.toolOverheadRatio}
-                promptEfficiencyPer100Turns={stats.promptEfficiencyPer100Turns}
-                qualityToolOverheadCorrelation={stats.qualityToolOverheadCorrelation}
-                marginalQualityCurve={stats.marginalQualityCurve}
-                quotaAgeMinutes={quota?.ageMinutes ?? null}
-                totalRated={stats.totalRated}
-                skillStats={stats.skillStats}
-              />
-            </CollapsibleModule>
+          <CollapsibleModule title="Premium Usage">
+            <PremiumUsagePanel
+              embedded
+              hideTitle
+              dailyBuckets={stats.dailyBuckets}
+              quotaTimeSeries={quota?.timeSeries ?? []}
+              chatEntitlement={quota?.chatEntitlement ?? null}
+              completionsEntitlement={quota?.completionsEntitlement ?? null}
+              premiumEntitlement={quota?.premiumEntitlement ?? null}
+              quotaResetDate={quota?.quotaResetDate ?? null}
+              intradayBuckets={stats.intradayBuckets}
+              quotaAgeMinutes={quota?.ageMinutes ?? null}
+            />
+          </CollapsibleModule>
 
-            <CollapsibleModule title="Divergence Analysis">
-              <DivergencePanel
-                embedded
-                hideTitle
-                dailyBuckets={stats.dailyBuckets}
-                quotaTimeSeries={quota?.timeSeries ?? []}
-                projectScopedComparison={selectedWorkspace !== null}
-              />
-            </CollapsibleModule>
+          <CollapsibleModule title="Divergence Analysis">
+            <DivergencePanel
+              embedded
+              hideTitle
+              dailyBuckets={stats.dailyBuckets}
+              quotaTimeSeries={quota?.timeSeries ?? []}
+              intradayBuckets={stats.intradayBuckets}
+              projectScopedComparison={selectedWorkspace !== null}
+            />
+          </CollapsibleModule>
 
-            <CollapsibleModule title="Skill Impact">
-              <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} totalRated={stats.totalRated} />
-            </CollapsibleModule>
+          <CollapsibleModule title="Premium Usage Projection">
+            <ProjectionChart
+              embedded
+              hideTitle
+              points={effectiveProjectionPoints}
+              planQuota={effectiveQuota}
+              exhaustionDate={projectedWithinCycle && effectiveProjectedExhaustionDate
+                ? (() => {
+                    const year = effectiveProjectedExhaustionDate.getFullYear();
+                    const month = String(effectiveProjectedExhaustionDate.getMonth() + 1).padStart(2, "0");
+                    const day = String(effectiveProjectedExhaustionDate.getDate()).padStart(2, "0");
+                    return `${year}-${month}-${day}`;
+                  })()
+                : null}
+              dailyBurnRate={effectiveDailyBurn}
+              avgDays={avgDays}
+              onAvgDaysChange={setAvgDays}
+              sourceLabel={quota?.available ? "Billed premium usage" : "Transcript-estimated turns"}
+              coverageDays={billedCoverageDays}
+              confidenceLabel={projectionConfidenceLabel}
+            />
+          </CollapsibleModule>
 
-            <CollapsibleModule title="Token Volume">
-              <TokenVolumeChart
-                dailyBuckets={stats.dailyBuckets}
-                topWorkspacesByTokens={stats.topWorkspacesByTokens}
-              />
-            </CollapsibleModule>
-          </div>
-        </section>
+          <CollapsibleModule title="Skill Impact">
+            <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} totalRated={stats.totalRated} />
+          </CollapsibleModule>
 
-        <section aria-label="Evidence" className="space-y-4">
-          <div className="px-1">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Evidence</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Raw proof, capture health, and session-level drill-down.
-            </p>
-          </div>
-          <div className="space-y-4">
+          <CollapsibleModule title="Token Volume">
+            <TokenVolumeChart
+              dailyBuckets={stats.dailyBuckets}
+              topWorkspacesByTokens={stats.topWorkspacesByTokens}
+            />
+          </CollapsibleModule>
+
             {stats.toolLatencies.length > 0 && (
               <CollapsibleModule title="Tool Latency">
                 <div className="rounded-lg bg-white border border-gray-200 p-5">
@@ -964,36 +967,20 @@ export default function Dashboard() {
                       </tbody>
                     </table>
                   </div>
-                  {stats.toolLatencies.length > TOOL_LATENCY_PAGE_SIZE && (
-                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                      <span>
-                        Page {currentToolLatencyPage + 1} of {toolLatencyPageCount} · Showing{" "}
-                        {currentToolLatencyPage * TOOL_LATENCY_PAGE_SIZE + 1}-
-                        {Math.min(
-                          stats.toolLatencies.length,
-                          (currentToolLatencyPage + 1) * TOOL_LATENCY_PAGE_SIZE
-                        )}{" "}
-                        of {stats.toolLatencies.length} tools
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setToolLatencyPage((page) => Math.max(0, page - 1))}
-                          disabled={currentToolLatencyPage === 0}
-                          className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Previous
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setToolLatencyPage((page) => Math.min(toolLatencyPageCount - 1, page + 1))}
-                          disabled={currentToolLatencyPage >= toolLatencyPageCount - 1}
-                          className="rounded border border-gray-200 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
+                  {stats.toolLatencies.length > toolLatencyPageSize && (
+                    <PaginationControls
+                      page={currentToolLatencyPage}
+                      pageCount={toolLatencyPageCount}
+                      pageSize={toolLatencyPageSize}
+                      totalItems={stats.toolLatencies.length}
+                      itemLabel="tools"
+                      pageSizeOptions={TOOL_LATENCY_PAGE_SIZE_OPTIONS}
+                      onPageChange={setToolLatencyPage}
+                      onPageSizeChange={(nextPageSize) => {
+                        setToolLatencyPageSize(nextPageSize);
+                        setToolLatencyPage(0);
+                      }}
+                    />
                   )}
                 </div>
               </CollapsibleModule>
@@ -1091,8 +1078,7 @@ export default function Dashboard() {
             <CollapsibleModule title="Model Limits">
               <ModelLimitsPanel embedded hideTitle />
             </CollapsibleModule>
-          </div>
-        </section>
+        </div>
       </main>
     </div>
   );

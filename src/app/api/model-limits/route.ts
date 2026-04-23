@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getModelLimitsFromDb,
   upsertModelLimit,
-  getRecentRateLimitErrors,
+  getRecentRateLimitErrorSummaries,
 } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   try {
     const limits = getModelLimitsFromDb();
-    const recentErrors = getRecentRateLimitErrors();
+    const recentErrors = getRecentRateLimitErrorSummaries();
 
     return NextResponse.json({
       modelLimits: limits,
-      recentRateLimitErrors: recentErrors,
+      rateLimitErrorGroups: recentErrors,
       lastUpdated: new Date().toISOString(),
     });
   } catch (error) {
