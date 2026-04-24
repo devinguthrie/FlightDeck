@@ -151,6 +151,8 @@ interface Session {
   toolCallsTotal: number;
   skillsActivated: string[];
   estimatedTotalTokens: number;
+  activeModel: string | null;
+  usedModels: string[];
   rating: {
     quality: number;
     taskCompleted: string;

@@ -4,21 +4,10 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import DivergencePanel, { chooseCenteredTrendWindow } from "@/components/DivergencePanel";
-
-describe("chooseCenteredTrendWindow", () => {
-  it("chooses a centered daily window that includes the selected day", () => {
-    const rows = Array.from({ length: 30 }, (_, index) => ({
-      date: `2026-04-${String(index + 1).padStart(2, "0")}`,
-    }));
-
-    expect(chooseCenteredTrendWindow(rows, "2026-04-15")).toBe("7d");
-    expect(chooseCenteredTrendWindow(rows, "2026-04-02")).toBe("7d");
-  });
-});
+import DivergencePanel from "@/components/DivergencePanel";
 
 describe("DivergencePanel", () => {
-  it("drops the turns-per-billed card and lets top divergence days drive the chart range", () => {
+  it("drops the turns-per-billed card and preserves the current range when clicking a day", () => {
     class ResizeObserverMock {
       observe() {}
       unobserve() {}
@@ -26,6 +15,7 @@ describe("DivergencePanel", () => {
     }
 
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const dailyBuckets = Array.from({ length: 20 }, (_, index) => ({
       date: `2026-04-${String(index + 1).padStart(2, "0")}`,
@@ -58,8 +48,10 @@ describe("DivergencePanel", () => {
 
     fireEvent.click(screen.getByText("Apr 10"));
 
-    expect(screen.getByText("Premium efficiency trend (7d)")).toBeInTheDocument();
+    expect(screen.getByText("Premium efficiency trend (24h)")).toBeInTheDocument();
+    expect(consoleError).not.toHaveBeenCalled();
 
+    consoleError.mockRestore();
     vi.unstubAllGlobals();
   });
 

@@ -44,6 +44,37 @@ export interface QuotaSummary {
   timeSeries: QuotaDataPoint[];
 }
 
+export function isUsableQuotaSnapshotRecord(record: QuotaSnapshotRecord): boolean {
+  const entitlements = [
+    record.chat_entitlement,
+    record.completions_entitlement,
+    record.premium_entitlement,
+  ];
+  const remaining = [
+    [record.chat_remaining, record.chat_entitlement],
+    [record.completions_remaining, record.completions_entitlement],
+    [record.premium_remaining, record.premium_entitlement],
+  ];
+
+  if (entitlements.some((value) => !Number.isFinite(value))) {
+    return false;
+  }
+
+  if (remaining.some(([left, total]) => !Number.isFinite(left) || !Number.isFinite(total))) {
+    return false;
+  }
+
+  if (!entitlements.some((value) => value > 1)) {
+    return false;
+  }
+
+  if (remaining.some(([left, total]) => left < 0 || total < 0 || left > total)) {
+    return false;
+  }
+
+  return true;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TELEMETRY_DIR = path.join(
@@ -72,17 +103,19 @@ export function parseSnapshotsFromText(raw: string): QuotaSummary {
     }
   }
 
-  if (records.length === 0) {
+  const validRecords = records.filter(isUsableQuotaSnapshotRecord);
+
+  if (validRecords.length === 0) {
     return makeEmpty();
   }
 
   // Sort ascending by recorded_at
-  records.sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+  validRecords.sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
 
-  const latest = records[records.length - 1];
+  const latest = validRecords[validRecords.length - 1];
   const ageMs = Date.now() - new Date(latest.recorded_at).getTime();
 
-  const timeSeries: QuotaDataPoint[] = records.map((r) => ({
+  const timeSeries: QuotaDataPoint[] = validRecords.map((r) => ({
     timestamp: r.recorded_at,
     chatUsed: r.chat_entitlement - r.chat_remaining,
     completionsUsed: r.completions_entitlement - r.completions_remaining,

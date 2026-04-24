@@ -17,6 +17,7 @@ export type {
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const INTRADAY_HISTORY_HOURS = 30 * 24;
 
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
       ? allSessions.filter((s) => s.workspaceName === workspace)
       : allSessions;
     const ratings = getAllRatingsFromDb();
-    const intradayBuckets = parseIntradayActivity(24);
+    const intradayBuckets = parseIntradayActivity(INTRADAY_HISTORY_HOURS);
     const proxyRequests = getAllProxyRequestsFromDb();
 
     return NextResponse.json(

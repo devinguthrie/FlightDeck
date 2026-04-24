@@ -17,6 +17,8 @@ const sessions = Array.from({ length: 30 }, (_, index) => ({
   toolCallsTotal: index,
   skillsActivated: [],
   estimatedTotalTokens: 1000,
+  activeModel: null,
+  usedModels: [],
   rating: null,
 }));
 

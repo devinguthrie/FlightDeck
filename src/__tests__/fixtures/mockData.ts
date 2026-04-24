@@ -54,6 +54,8 @@ export function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSessi
     vsCodeVersion: overrides.vsCodeVersion ?? "1.88.0",
     toolLatencyMs: overrides.toolLatencyMs ?? {},
     contextSaturation: overrides.contextSaturation ?? 0,
+    activeModel: overrides.activeModel ?? null,
+    usedModels: overrides.usedModels ?? [],
   };
 }
 

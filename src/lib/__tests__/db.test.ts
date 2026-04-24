@@ -400,6 +400,49 @@ describe("buildQuotaSummaryFromDb", () => {
     const summary = buildQuotaSummaryFromDb();
     expect(summary.quotaResetDate).toBeNull();
   });
+
+  it("ignores malformed snapshots with all entitlements set to 1", async () => {
+    const { upsertQuotaSnapshot, buildQuotaSummaryFromDb } = await import("@/lib/db");
+
+    upsertQuotaSnapshot(
+      makeSnapshotRecord({
+        recorded_at: "2026-04-22T14:59:27.213Z",
+        premium_entitlement: 1500,
+        premium_remaining: 569.4,
+        chat_entitlement: 0,
+        chat_remaining: 0,
+        completions_entitlement: 0,
+        completions_remaining: 0,
+      })
+    );
+    upsertQuotaSnapshot(
+      makeSnapshotRecord({
+        recorded_at: "2026-04-22T15:04:52.585Z",
+        premium_entitlement: 1,
+        premium_remaining: 0,
+        chat_entitlement: 1,
+        chat_remaining: 0,
+        completions_entitlement: 1,
+        completions_remaining: 0,
+      })
+    );
+    upsertQuotaSnapshot(
+      makeSnapshotRecord({
+        recorded_at: "2026-04-23T14:35:54.253Z",
+        premium_entitlement: 1500,
+        premium_remaining: 517.3,
+        chat_entitlement: 0,
+        chat_remaining: 0,
+        completions_entitlement: 0,
+        completions_remaining: 0,
+      })
+    );
+
+    const summary = buildQuotaSummaryFromDb();
+    expect(summary.latestRecordedAt).toBe("2026-04-23T14:35:54.253Z");
+    expect(summary.timeSeries).toHaveLength(2);
+    expect(summary.timeSeries.map((point) => point.premiumUsed)).toEqual([930.6, 982.7]);
+  });
 });
 
 // ─── Ratings ──────────────────────────────────────────────────────────────────

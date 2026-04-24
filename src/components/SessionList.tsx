@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import PaginationControls from "@/components/PaginationControls";
+import { SessionModelBadge } from "@/components/SessionModelBadge";
 
 interface Session {
   sessionId: string;
@@ -14,6 +15,8 @@ interface Session {
   toolCallsTotal: number;
   skillsActivated: string[];
   estimatedTotalTokens: number;
+  activeModel: string | null;
+  usedModels: string[];
   rating: {
     quality: number;
     taskCompleted: string;
@@ -277,6 +280,7 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
               <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
                 <th className="pb-2 font-medium">Last Activity</th>
                 <th className="pb-2 font-medium">Workspace</th>
+                <th className="pb-2 font-medium">Model</th>
                 <th className="pb-2 font-medium text-right">Req~</th>
                 <th className="pb-2 font-medium text-right">Tools</th>
                 <th className="pb-2 font-medium text-right">Tokens~</th>
@@ -302,6 +306,9 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
                   </td>
                   <td className="py-2.5 text-gray-600 text-xs font-mono truncate max-w-[120px]">
                     {s.workspaceName}
+                  </td>
+                  <td className="py-2.5 text-xs">
+                    <SessionModelBadge sessionId={s.sessionId} />
                   </td>
                   <td className="py-2.5 text-right font-semibold text-blue-600">
                     {s.premiumRequests}

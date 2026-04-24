@@ -42,9 +42,9 @@ interface Props {
 
 type TimeWindow = "3h" | "12h" | "24h" | "7d" | "14d" | "30d";
 type DailyTimeWindow = Extract<TimeWindow, "7d" | "14d" | "30d">;
+type HourlyTimeWindow = Extract<TimeWindow, "3h" | "12h" | "24h">;
 
 const WIN_LABELS: TimeWindow[] = ["3h", "12h", "24h", "7d", "14d", "30d"];
-const DAILY_WINDOWS: DailyTimeWindow[] = ["7d", "14d", "30d"];
 
 function toDayKey(ts: string): string {
   const d = new Date(ts);
@@ -186,27 +186,28 @@ function buildCenteredDailySlice<T extends { date: string }>(
   return rows.slice(start, start + days);
 }
 
-export function chooseCenteredTrendWindow<T extends { date: string }>(
+function buildFocusedHourlySlice<T extends { hour: string; date: string }>(
   rows: T[],
-  focusDate: string,
-): DailyTimeWindow {
-  const best = DAILY_WINDOWS.reduce<{
-    window: DailyTimeWindow;
-    distance: number;
-  }>((currentBest, window) => {
-    const slice = buildCenteredDailySlice(rows, window, focusDate);
-    const focusIndex = slice.findIndex((row) => row.date === focusDate);
-    const centerIndex = (slice.length - 1) / 2;
-    const distance = focusIndex === -1 ? Number.POSITIVE_INFINITY : Math.abs(focusIndex - centerIndex);
+  window: HourlyTimeWindow,
+  focusDate: string | null,
+  now: number,
+): T[] {
+  const hours = windowToHours(window);
+  if (rows.length <= hours) return rows;
 
-    if (distance < currentBest.distance) return { window, distance };
-    if (distance === currentBest.distance && windowToDays(window)! < windowToDays(currentBest.window)!) {
-      return { window, distance };
-    }
-    return currentBest;
-  }, { window: "30d", distance: Number.POSITIVE_INFINITY });
+  if (!focusDate) {
+    const cutoff = now - hours * 60 * 60 * 1000;
+    const recentRows = rows.filter((row) => {
+      const rowTime = new Date(row.hour).getTime();
+      return rowTime >= cutoff && rowTime <= now;
+    });
+    return recentRows.length > 0 ? recentRows : rows.slice(-hours);
+  }
 
-  return best.window;
+  const dayRows = rows.filter((row) => row.date === focusDate);
+  if (dayRows.length === 0) return rows.slice(-hours);
+
+  return dayRows.slice(-Math.min(hours, dayRows.length));
 }
 
 type TrendRow = {
@@ -239,6 +240,19 @@ function HighlightDot({
   }
 
   return <circle cx={cx} cy={cy} r={4} fill="#ffffff" stroke={stroke ?? "#7c3aed"} strokeWidth={2} />;
+}
+
+type HighlightDotProps = {
+  key?: string | number;
+  cx?: number;
+  cy?: number;
+  payload?: { date?: string };
+  stroke?: string;
+};
+
+function renderHighlightDot(props: HighlightDotProps, activeDate: string | null) {
+  const { key, ...dotProps } = props;
+  return <HighlightDot key={key} {...dotProps} activeDate={activeDate} />;
 }
 
 export default function DivergencePanel({
@@ -304,9 +318,9 @@ export default function DivergencePanel({
   }, [intradayBuckets, quotaTimeSeries]);
 
   const hourlyTrendSlice = useMemo(() => {
-    const cutoff = now - windowToHours(trendWindow) * 60 * 60 * 1000;
-    return hourlyTrend.filter((row) => new Date(row.hour).getTime() >= cutoff);
-  }, [hourlyTrend, now, trendWindow]);
+    if (windowToDays(trendWindow) !== null) return hourlyTrend;
+    return buildFocusedHourlySlice(hourlyTrend, trendWindow as HourlyTimeWindow, selectedDate, now);
+  }, [hourlyTrend, now, selectedDate, trendWindow]);
 
   const trendSlice = useMemo(() => {
     const dailyWindow = windowToDays(trendWindow);
@@ -321,15 +335,14 @@ export default function DivergencePanel({
 
   function handleWindowChange(window: TimeWindow) {
     setTrendWindow(window);
-    if (windowToDays(window) === null) {
-      setSelectedDate(null);
-    }
   }
 
   function handleFocusDate(date: string) {
-    const nextWindow = chooseCenteredTrendWindow(rows, date);
     setSelectedDate(date);
-    setTrendWindow(nextWindow);
+  }
+
+  function handleResetToToday() {
+    setSelectedDate(null);
   }
 
   if (rows.length === 0) return null;
@@ -374,7 +387,19 @@ export default function DivergencePanel({
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Premium efficiency trend ({trendWindow})
           </p>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleResetToToday}
+              disabled={!selectedDate}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                selectedDate
+                  ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-gray-50 text-gray-300 cursor-not-allowed"
+              }`}
+            >
+              Today
+            </button>
             {WIN_LABELS.map((window) => (
               <button
                 key={window}
@@ -532,7 +557,7 @@ export default function DivergencePanel({
                   name="Transcript Turns"
                   stroke="#3b82f6"
                   strokeWidth={1.5}
-                  dot={(props) => <HighlightDot {...props} activeDate={selectedDate} />}
+                  dot={(props) => renderHighlightDot(props, selectedDate)}
                   activeDot={{ r: 4 }}
                   connectNulls={false}
                   strokeDasharray="4 2"
@@ -544,7 +569,7 @@ export default function DivergencePanel({
                   name="Billed Premium"
                   stroke="#10b981"
                   strokeWidth={1.5}
-                  dot={(props) => <HighlightDot {...props} activeDate={selectedDate} />}
+                  dot={(props) => renderHighlightDot(props, selectedDate)}
                   activeDot={{ r: 4 }}
                   connectNulls={false}
                   strokeDasharray="4 2"
@@ -556,7 +581,7 @@ export default function DivergencePanel({
                   name="Turns / Premium"
                   stroke="#7c3aed"
                   strokeWidth={2}
-                  dot={(props) => <HighlightDot {...props} activeDate={selectedDate} />}
+                  dot={(props) => renderHighlightDot(props, selectedDate)}
                   activeDot={{ r: 4 }}
                   connectNulls={false}
                 />
@@ -588,7 +613,7 @@ export default function DivergencePanel({
         <div>
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Top divergence days</p>
-            <p className="text-[11px] text-gray-400">Click to center the chart on a day.</p>
+            <p className="text-[11px] text-gray-400">Click to focus a day within the current range.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

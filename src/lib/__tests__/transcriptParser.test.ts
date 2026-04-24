@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
 import path from "path";
 import os from "os";
-import { parseTranscriptFile } from "@/lib/transcriptParser";
+import { parseChatSessionModelFile, parseTranscriptFile } from "@/lib/transcriptParser";
 
 // ─── Temp directory helpers ───────────────────────────────────────────────────
 
@@ -289,5 +289,74 @@ describe("parseTranscriptFile", () => {
       expect(result.estimatedInputTokens).toBe(0);
       expect(result.estimatedOutputTokens).toBe(0);
     });
+  });
+});
+
+describe("parseChatSessionModelFile", () => {
+  it("extracts the initial selected model from a chat session file", () => {
+    const f = writeTmpTranscript("chat-model-initial.jsonl", [
+      {
+        kind: 0,
+        v: {
+          inputState: {
+            selectedModel: {
+              identifier: "copilot/claude-sonnet-4.6",
+              metadata: { name: "Claude Sonnet 4.6" },
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(parseChatSessionModelFile(f)).toEqual({
+      activeModel: "Claude Sonnet 4.6",
+      usedModels: ["Claude Sonnet 4.6"],
+    });
+  });
+
+  it("tracks model switches from selectedModel patch events", () => {
+    const f = writeTmpTranscript("chat-model-switches.jsonl", [
+      {
+        kind: 0,
+        v: {
+          inputState: {
+            selectedModel: {
+              identifier: "copilot/auto",
+              metadata: { name: "Auto" },
+            },
+          },
+        },
+      },
+      {
+        kind: 1,
+        k: ["inputState", "selectedModel"],
+        v: {
+          identifier: "copilot/claude-opus-4.6",
+          metadata: { name: "Claude Opus 4.6" },
+        },
+      },
+      {
+        kind: 1,
+        k: ["inputState", "selectedModel"],
+        v: {
+          identifier: "copilot/claude-sonnet-4.6",
+          metadata: { name: "Claude Sonnet 4.6" },
+        },
+      },
+    ]);
+
+    expect(parseChatSessionModelFile(f)).toEqual({
+      activeModel: "Claude Sonnet 4.6",
+      usedModels: ["Auto", "Claude Opus 4.6", "Claude Sonnet 4.6"],
+    });
+  });
+
+  it("returns null when no selected model events exist", () => {
+    const f = writeTmpTranscript("chat-model-missing.jsonl", [
+      { kind: 0, v: { inputState: { inputText: "hi" } } },
+      { kind: 1, k: ["inputState", "inputText"], v: "hello" },
+    ]);
+
+    expect(parseChatSessionModelFile(f)).toBeNull();
   });
 });

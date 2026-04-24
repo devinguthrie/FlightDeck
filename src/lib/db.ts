@@ -21,7 +21,12 @@ import path from "path";
 import os from "os";
 import { parseTranscriptFile, findTranscriptDirectories } from "./transcriptParser";
 import type { ParsedSession } from "./transcriptParser";
-import type { QuotaSnapshotRecord, QuotaSummary, QuotaDataPoint } from "./snapshotParser";
+import {
+  isUsableQuotaSnapshotRecord,
+  type QuotaSnapshotRecord,
+  type QuotaSummary,
+  type QuotaDataPoint,
+} from "./snapshotParser";
 import { readProxyRequestsFromDisk, PROXY_JSONL_PATH } from "./proxyRequestParser";
 import type { ProxyRequest } from "./proxyRequestParser";
 export type { ProxyRequest } from "./proxyRequestParser";
@@ -107,7 +112,9 @@ function applySchema(db: Database.Database): void {
       premium_requests        INTEGER NOT NULL DEFAULT 0,
       raw_path                TEXT NOT NULL DEFAULT '',
       copilot_version         TEXT NOT NULL DEFAULT '',
-      vs_code_version         TEXT NOT NULL DEFAULT ''
+      vs_code_version         TEXT NOT NULL DEFAULT '',
+      active_model            TEXT,
+      used_models             TEXT NOT NULL DEFAULT '[]'
     );
 
     CREATE TABLE IF NOT EXISTS ingested_files (
@@ -189,6 +196,8 @@ function migrateSessionColumns(db: Database.Database): void {
   addIfMissing("tool_latency_ms", "TEXT NOT NULL DEFAULT '{}'");
   addIfMissing("context_saturation", "REAL NOT NULL DEFAULT 0");
   const addedActiveMinutes = addIfMissing("active_minutes", "REAL NOT NULL DEFAULT 0");
+  addIfMissing("active_model", "TEXT");
+  addIfMissing("used_models", "TEXT NOT NULL DEFAULT '[]'");
 
   if (addedActiveMinutes) {
     db.prepare(
@@ -330,8 +339,8 @@ function syncSessions(): void {
         tool_calls_by_name, skills_activated,
         estimated_input_tokens, estimated_output_tokens, estimated_total_tokens,
         premium_requests, raw_path, copilot_version, vs_code_version,
-        tool_latency_ms, context_saturation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        tool_latency_ms, context_saturation, active_model, used_models)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const sync = db.transaction(() => {
@@ -382,7 +391,9 @@ function syncSessions(): void {
           session.copilotVersion,
           session.vsCodeVersion,
           JSON.stringify(session.toolLatencyMs ?? {}),
-          session.contextSaturation ?? 0
+          session.contextSaturation ?? 0,
+          session.activeModel ?? null,
+          JSON.stringify(session.usedModels ?? [])
         );
         upsertFile.run(filePath, mtime, 1);
       }
@@ -415,6 +426,8 @@ function rowToSession(row: Record<string, unknown>): ParsedSession {
     rawPath: row.raw_path as string,
     copilotVersion: row.copilot_version as string,
     vsCodeVersion: row.vs_code_version as string,
+    activeModel: (row.active_model as string | null) ?? null,
+    usedModels: JSON.parse((row.used_models as string) ?? '[]') as string[],
   };
 }
 
@@ -431,6 +444,10 @@ export function getAllSessionsFromDb(): ParsedSession[] {
 // ─── Quota snapshots ──────────────────────────────────────────────────────────
 
 export function upsertQuotaSnapshot(record: QuotaSnapshotRecord): void {
+  if (!isUsableQuotaSnapshotRecord(record)) {
+    return;
+  }
+
   const db = getDb();
   db.prepare(
     `INSERT OR REPLACE INTO quota_snapshots
@@ -457,8 +474,9 @@ export function buildQuotaSummaryFromDb(): QuotaSummary {
   const records = db
     .prepare("SELECT * FROM quota_snapshots ORDER BY recorded_at ASC")
     .all() as QuotaSnapshotRecord[];
+  const validRecords = records.filter(isUsableQuotaSnapshotRecord);
 
-  if (records.length === 0) {
+  if (validRecords.length === 0) {
     return {
       available: false,
       latestSnapshot: null,
@@ -479,10 +497,10 @@ export function buildQuotaSummaryFromDb(): QuotaSummary {
     };
   }
 
-  const latest = records[records.length - 1];
+  const latest = validRecords[validRecords.length - 1];
   const ageMs = Date.now() - new Date(latest.recorded_at).getTime();
 
-  const timeSeries: QuotaDataPoint[] = records.map((r) => ({
+  const timeSeries: QuotaDataPoint[] = validRecords.map((r) => ({
     timestamp: r.recorded_at,
     chatUsed: r.chat_entitlement - r.chat_remaining,
     completionsUsed: r.completions_entitlement - r.completions_remaining,

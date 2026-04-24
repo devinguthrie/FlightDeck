@@ -30,6 +30,10 @@ export interface ParsedSession {
   rawPath: string;
   copilotVersion: string;
   vsCodeVersion: string;
+  /** Currently active model (updates in real-time during session). */
+  activeModel: string | null;
+  /** All models used during this session (tracks "Auto" model switches). */
+  usedModels: string[];
 }
 
 export interface IntradayActivityBucket {
@@ -38,12 +42,23 @@ export interface IntradayActivityBucket {
   toolCalls: number;
 }
 
+export interface SessionModelInfo {
+  activeModel: string | null;
+  usedModels: string[];
+}
+
 interface TranscriptEvent {
   type: string;
   data: Record<string, unknown>;
   id: string;
   timestamp: string;
   parentId: string | null;
+}
+
+interface ChatSessionEvent {
+  kind: number;
+  k?: string[];
+  v?: unknown;
 }
 
 /** Rough 4-chars-per-token approximation. Reliable for trends, not accounting. */
@@ -122,6 +137,123 @@ function resolveWorkspaceName(wsStoragePath: string, hash: string): string {
     }
   }
   return hash.slice(0, 8); // fallback: first 8 chars of hash
+}
+
+function getWorkspaceStoragePaths(): string[] {
+  const appDataPaths: string[] = [];
+  if (process.env.APPDATA) {
+    appDataPaths.push(path.join(process.env.APPDATA, "Code", "User", "workspaceStorage"));
+    appDataPaths.push(path.join(process.env.APPDATA, "Code - Insiders", "User", "workspaceStorage"));
+  }
+  appDataPaths.push(
+    path.join(os.homedir(), "Library", "Application Support", "Code", "User", "workspaceStorage")
+  );
+  appDataPaths.push(path.join(os.homedir(), ".config", "Code", "User", "workspaceStorage"));
+  return appDataPaths;
+}
+
+function extractModelDisplayName(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as {
+    identifier?: unknown;
+    metadata?: { name?: unknown; id?: unknown; family?: unknown };
+  };
+
+  if (typeof record.metadata?.name === "string" && record.metadata.name.trim()) {
+    return record.metadata.name.trim();
+  }
+
+  if (typeof record.identifier === "string" && record.identifier.trim()) {
+    const identifier = record.identifier.trim();
+    const [, tail = identifier] = identifier.split("/", 2);
+    return tail;
+  }
+
+  if (typeof record.metadata?.id === "string" && record.metadata.id.trim()) {
+    return record.metadata.id.trim();
+  }
+
+  if (typeof record.metadata?.family === "string" && record.metadata.family.trim()) {
+    return record.metadata.family.trim();
+  }
+
+  return null;
+}
+
+export function parseChatSessionModelFile(filePath: string): SessionModelInfo | null {
+  let content: string;
+  try {
+    content = readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const usedModels = new Set<string>();
+  let activeModel: string | null = null;
+
+  for (const line of content.split("\n")) {
+    if (!line.trim()) continue;
+
+    let event: ChatSessionEvent;
+    try {
+      event = JSON.parse(line) as ChatSessionEvent;
+    } catch {
+      continue;
+    }
+
+    let selectedModel: unknown;
+    if (event.kind === 0) {
+      selectedModel = (event.v as { inputState?: { selectedModel?: unknown } } | undefined)
+        ?.inputState?.selectedModel;
+    } else if (
+      event.kind === 1 &&
+      Array.isArray(event.k) &&
+      event.k.length === 2 &&
+      event.k[0] === "inputState" &&
+      event.k[1] === "selectedModel"
+    ) {
+      selectedModel = event.v;
+    }
+
+    const modelName = extractModelDisplayName(selectedModel);
+    if (!modelName) continue;
+
+    activeModel = modelName;
+    usedModels.add(modelName);
+  }
+
+  if (!activeModel && usedModels.size === 0) {
+    return null;
+  }
+
+  return {
+    activeModel,
+    usedModels: Array.from(usedModels),
+  };
+}
+
+export function findSessionModelInfo(sessionId: string): SessionModelInfo | null {
+  for (const wsStoragePath of getWorkspaceStoragePaths()) {
+    if (!existsSync(wsStoragePath)) continue;
+
+    let hashes: string[];
+    try {
+      hashes = readdirSync(wsStoragePath);
+    } catch {
+      continue;
+    }
+
+    for (const hash of hashes) {
+      const chatSessionPath = path.join(wsStoragePath, hash, "chatSessions", `${sessionId}.jsonl`);
+      if (!existsSync(chatSessionPath)) continue;
+
+      const modelInfo = parseChatSessionModelFile(chatSessionPath);
+      if (modelInfo) return modelInfo;
+    }
+  }
+
+  return null;
 }
 
 /** Parse a single Copilot Chat transcript JSONL file into a structured session. */
@@ -297,6 +429,8 @@ export function parseTranscriptFile(filePath: string): ParsedSession | null {
     rawPath: filePath,
     copilotVersion,
     vsCodeVersion,
+    activeModel: null,
+    usedModels: [],
   };
 }
 
@@ -306,21 +440,7 @@ export function findTranscriptDirectories(): string[] {
 
   // Windows: %APPDATA%\Code\User\workspaceStorage
   // macOS/Linux: ~/Library/Application Support/Code/User/workspaceStorage
-  const appDataPaths: string[] = [];
-  if (process.env.APPDATA) {
-    appDataPaths.push(path.join(process.env.APPDATA, "Code", "User", "workspaceStorage"));
-    appDataPaths.push(path.join(process.env.APPDATA, "Code - Insiders", "User", "workspaceStorage"));
-  }
-  // macOS
-  appDataPaths.push(
-    path.join(os.homedir(), "Library", "Application Support", "Code", "User", "workspaceStorage")
-  );
-  // Linux
-  appDataPaths.push(
-    path.join(os.homedir(), ".config", "Code", "User", "workspaceStorage")
-  );
-
-  for (const wsStoragePath of appDataPaths) {
+  for (const wsStoragePath of getWorkspaceStoragePaths()) {
     if (!existsSync(wsStoragePath)) continue;
     try {
       const hashes = readdirSync(wsStoragePath);

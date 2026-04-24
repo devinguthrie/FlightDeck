@@ -129,6 +129,43 @@ describe("parseSnapshotsFromText", () => {
       expect(result.available).toBe(true);
       expect(result.timeSeries.length).toBe(1);
     });
+
+    it("ignores malformed entitlement rows that would fake a quota reset", () => {
+      const records = [
+        makeSnapshot({
+          recorded_at: "2026-04-20T10:00:00Z",
+          premium_entitlement: 1500,
+          premium_remaining: 700,
+          chat_entitlement: 0,
+          chat_remaining: 0,
+          completions_entitlement: 0,
+          completions_remaining: 0,
+        }),
+        makeSnapshot({
+          recorded_at: "2026-04-22T15:04:52.585Z",
+          premium_entitlement: 1,
+          premium_remaining: 0,
+          chat_entitlement: 1,
+          chat_remaining: 0,
+          completions_entitlement: 1,
+          completions_remaining: 0,
+        }),
+        makeSnapshot({
+          recorded_at: "2026-04-23T10:00:00Z",
+          premium_entitlement: 1500,
+          premium_remaining: 600,
+          chat_entitlement: 0,
+          chat_remaining: 0,
+          completions_entitlement: 0,
+          completions_remaining: 0,
+        }),
+      ];
+
+      const result = parseSnapshotsFromText(toJSONL(records));
+      expect(result.latestRecordedAt).toBe("2026-04-23T10:00:00Z");
+      expect(result.timeSeries).toHaveLength(2);
+      expect(result.timeSeries.map((point) => point.premiumUsed)).toEqual([800, 900]);
+    });
   });
 
   describe("timeSeries computation correctness", () => {
