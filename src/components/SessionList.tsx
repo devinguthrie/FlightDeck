@@ -31,6 +31,7 @@ interface Props {
 }
 const SESSION_PAGE_SIZE = 5;
 const SESSION_PAGE_SIZE_OPTIONS = [5, 10, 25, 50, 100];
+type SortKey = "lastActivity" | "requests" | "tokens" | "openSpan" | "quality";
 
 function StarRating({
   value,
@@ -172,6 +173,8 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(SESSION_PAGE_SIZE);
   const [now] = useState(() => Date.now());
+  const [sortKey, setSortKey] = useState<SortKey>("lastActivity");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const thresholds = useMemo(() => {
     const sortedRequests = [...sessions].map((s) => s.premiumRequests).sort((a, b) => a - b);
@@ -193,15 +196,41 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
     };
   }, [sessions]);
 
-  const filtered = showUnratedOnly
-    ? sessions.filter((s) => !s.rating)
-    : sessions;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const filtered = useMemo(
+    () => (showUnratedOnly ? sessions.filter((s) => !s.rating) : sessions),
+    [sessions, showUnratedOnly]
+  );
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case "lastActivity": return dir * (new Date(a.endedAt).getTime() - new Date(b.endedAt).getTime());
+        case "requests":     return dir * (a.premiumRequests - b.premiumRequests);
+        case "tokens":       return dir * (a.estimatedTotalTokens - b.estimatedTotalTokens);
+        case "openSpan":     return dir * (a.durationMinutes - b.durationMinutes);
+        case "quality":      return dir * ((a.rating?.quality ?? 0) - (b.rating?.quality ?? 0));
+        default:             return 0;
+      }
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
-  const paginatedSessions = filtered.slice(
+  const paginatedSessions = sorted.slice(
     currentPage * pageSize,
     currentPage * pageSize + pageSize
   );
+
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+    setPage(0);
+  }
 
   function sessionFlags(s: SessionRow): string[] {
     const flags: string[] = [];
@@ -277,16 +306,26 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-                <th className="pb-2 font-medium">Last Activity</th>
+                <th className="pb-2 font-medium cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSort("lastActivity")}>
+                  Last Activity {sortKey === "lastActivity" ? (sortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                </th>
                 <th className="pb-2 font-medium">Workspace</th>
                 <th className="pb-2 font-medium">Model</th>
-                <th className="pb-2 font-medium text-right">Req~</th>
+                <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSort("requests")}>
+                  Req~ {sortKey === "requests" ? (sortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                </th>
                 <th className="pb-2 font-medium text-right">Tools</th>
-                <th className="pb-2 font-medium text-right">Tokens~</th>
-                <th className="pb-2 font-medium text-right">Open Span</th>
+                <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSort("tokens")}>
+                  Tokens~ {sortKey === "tokens" ? (sortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                </th>
+                <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSort("openSpan")}>
+                  Open Span {sortKey === "openSpan" ? (sortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                </th>
                 <th className="pb-2 font-medium">Skills</th>
                 <th className="pb-2 font-medium">Flags</th>
-                <th className="pb-2 font-medium">Quality</th>
+                <th className="pb-2 font-medium cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSort("quality")}>
+                  Quality {sortKey === "quality" ? (sortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">

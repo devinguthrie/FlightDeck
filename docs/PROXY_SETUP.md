@@ -13,7 +13,7 @@ gh copilot / VS Code
         │
         ▼  (HTTPS_PROXY)
   mitmdump :8877   ◄── copilot_capture.py writes ~/.ai-usage/proxy-requests.jsonl
-        │  (regular proxy — all traffic passes through, addon filters to Copilot only)
+        │  (regular proxy; all traffic passes through, addon filters to Copilot only)
         ▼
 copilot-proxy.githubusercontent.com  (and any other HTTPS destinations)
 ```
@@ -57,7 +57,7 @@ Open a terminal and run:
 .\scripts\Start-CopilotProxy.ps1
 ```
 
-The script starts `mitmdump` as a background process and sets `HTTPS_PROXY` at the **Windows User environment scope** — so every terminal you open (any project, any shell) automatically routes Copilot CLI traffic through the proxy. No need to run `gh copilot` from a specific terminal.
+The script starts `mitmdump` as a background process and sets `HTTPS_PROXY` at the **Windows User environment scope**, so every terminal you open (any project, any shell) automatically routes Copilot CLI traffic through the proxy. No need to run `gh copilot` from a specific terminal.
 
 `HTTPS_PROXY` is cleared automatically when you close the terminal running the proxy script.
 
@@ -96,10 +96,10 @@ Each intercepted request produces one JSONL record:
 
 FlightDeck uses this data to show:
 
-- **Proxy status badge** — green dot in the header when requests were captured in the last 24h
-- **Token Estimate Accuracy** — exact proxy tokens vs transcript-estimated tokens for the current billing cycle
-- **CLI Requests Captured** — count of CLI vs VS Code requests
-- **Proxy Capture panel** — per-model request counts and average latency
+- **Proxy status badge**: green dot in the header when requests were captured in the last 24h
+- **Token Estimate Accuracy**: exact proxy tokens vs transcript-estimated tokens for the current billing cycle
+- **CLI Requests Captured**: count of CLI vs VS Code requests
+- **Proxy Capture panel**: per-model request counts and average latency
 
 ---
 

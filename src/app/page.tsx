@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DivergencePanel from "@/components/DivergencePanel";
 import ProjectionChart from "@/components/ProjectionChart";
 import RoiExplorationPanel, { PremiumUsagePanel } from "@/components/RoiExplorationPanel";
@@ -133,6 +133,8 @@ function CollapsibleSection({
 
 const TOOL_LATENCY_PAGE_SIZE = 10;
 const TOOL_LATENCY_PAGE_SIZE_OPTIONS = [10, 25, 50];
+type ToolLatencySortKey = "count" | "avgMs" | "p50Ms" | "p95Ms";
+type ProxySortKey = "count" | "promptTokens" | "completionTokens" | "avgLatencyMs";
 
 function CollapsibleModule({
   title,
@@ -189,6 +191,40 @@ export default function Dashboard() {
   const [workspaceList, setWorkspaceList] = useState<string[]>([]);
   const [toolLatencyPage, setToolLatencyPage] = useState(0);
   const [toolLatencyPageSize, setToolLatencyPageSize] = useState(TOOL_LATENCY_PAGE_SIZE);
+  const [toolLatencySortKey, setToolLatencySortKey] = useState<ToolLatencySortKey>("count");
+  const [toolLatencySortDir, setToolLatencySortDir] = useState<"asc" | "desc">("desc");
+  const [proxySortKey, setProxySortKey] = useState<ProxySortKey>("count");
+  const [proxySortDir, setProxySortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedToolLatencies = useMemo(() => {
+    const arr = [...(stats?.toolLatencies ?? [])];
+    const dir = toolLatencySortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (toolLatencySortKey) {
+        case "count":  return dir * (a.count - b.count);
+        case "avgMs":  return dir * (a.avgMs - b.avgMs);
+        case "p50Ms":  return dir * (a.p50Ms - b.p50Ms);
+        case "p95Ms":  return dir * (a.p95Ms - b.p95Ms);
+        default:       return 0;
+      }
+    });
+    return arr;
+  }, [stats?.toolLatencies, toolLatencySortKey, toolLatencySortDir]);
+
+  const sortedProxyBreakdown = useMemo(() => {
+    const arr = [...(stats?.proxyStats?.modelBreakdown ?? [])];
+    const dir = proxySortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (proxySortKey) {
+        case "count":            return dir * (a.count - b.count);
+        case "promptTokens":     return dir * (a.totalPromptTokens - b.totalPromptTokens);
+        case "completionTokens": return dir * (a.totalCompletionTokens - b.totalCompletionTokens);
+        case "avgLatencyMs":     return dir * (a.avgLatencyMs - b.avgLatencyMs);
+        default:                 return 0;
+      }
+    });
+    return arr;
+  }, [stats?.proxyStats?.modelBreakdown, proxySortKey, proxySortDir]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -487,10 +523,27 @@ export default function Dashboard() {
       : null;
   const toolLatencyPageCount = Math.max(1, Math.ceil(stats.toolLatencies.length / toolLatencyPageSize));
   const currentToolLatencyPage = Math.min(toolLatencyPage, toolLatencyPageCount - 1);
-  const paginatedToolLatencies = stats.toolLatencies.slice(
+  const paginatedToolLatencies = sortedToolLatencies.slice(
     currentToolLatencyPage * toolLatencyPageSize,
     currentToolLatencyPage * toolLatencyPageSize + toolLatencyPageSize
   );
+  function handleToolLatencySort(key: ToolLatencySortKey) {
+    if (key === toolLatencySortKey) {
+      setToolLatencySortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setToolLatencySortKey(key);
+      setToolLatencySortDir("desc");
+    }
+    setToolLatencyPage(0);
+  }
+  function handleProxySort(key: ProxySortKey) {
+    if (key === proxySortKey) {
+      setProxySortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setProxySortKey(key);
+      setProxySortDir("desc");
+    }
+  }
   const lowConfidenceProjection =
     projectionConfidenceLabel.startsWith("Low confidence") ||
     projectionConfidenceLabel.startsWith("Medium confidence");
@@ -778,10 +831,18 @@ export default function Dashboard() {
                       <thead>
                         <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
                           <th className="pb-2 pr-4">Tool</th>
-                          <th className="pb-2 pr-4 text-right">Calls</th>
-                          <th className="pb-2 pr-4 text-right">Avg</th>
-                          <th className="pb-2 pr-4 text-right">P50</th>
-                          <th className="pb-2 text-right">P95</th>
+                          <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleToolLatencySort("count")}>
+                            Calls {toolLatencySortKey === "count" ? (toolLatencySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                          </th>
+                          <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleToolLatencySort("avgMs")}>
+                            Avg {toolLatencySortKey === "avgMs" ? (toolLatencySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                          </th>
+                          <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleToolLatencySort("p50Ms")}>
+                            P50 {toolLatencySortKey === "p50Ms" ? (toolLatencySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                          </th>
+                          <th className="pb-2 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleToolLatencySort("p95Ms")}>
+                            P95 {toolLatencySortKey === "p95Ms" ? (toolLatencySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
@@ -854,15 +915,23 @@ export default function Dashboard() {
                           <thead>
                             <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-100">
                               <th className="pb-2 pr-4">Model</th>
-                              <th className="pb-2 pr-4 text-right">Requests</th>
+                              <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleProxySort("count")}>
+                                Requests {proxySortKey === "count" ? (proxySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                              </th>
                               <th className="pb-2 pr-4 text-right">% of Total</th>
-                              <th className="pb-2 pr-4 text-right">Prompt Tokens</th>
-                              <th className="pb-2 pr-4 text-right">Completion Tokens</th>
-                              <th className="pb-2 text-right">Avg Latency</th>
+                              <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleProxySort("promptTokens")}>
+                                Prompt Tokens {proxySortKey === "promptTokens" ? (proxySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                              </th>
+                              <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleProxySort("completionTokens")}>
+                                Completion Tokens {proxySortKey === "completionTokens" ? (proxySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                              </th>
+                              <th className="pb-2 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleProxySort("avgLatencyMs")}>
+                                Avg Latency {proxySortKey === "avgLatencyMs" ? (proxySortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {stats.proxyStats.modelBreakdown.map((m) => (
+                            {sortedProxyBreakdown.map((m) => (
                               <tr key={m.model} className="hover:bg-gray-50">
                                 <td className="py-1.5 pr-4 font-mono text-xs text-gray-700">{m.model}</td>
                                 <td className="py-1.5 pr-4 text-right text-gray-500">{m.count}</td>

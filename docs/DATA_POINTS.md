@@ -1,4 +1,4 @@
-# FlightDeck — Data Points Reference
+# FlightDeck: Data Points Reference
 
 This document catalogs every data point that could be meaningful for measuring AI usage ROI.
 Organized by: availability, source, and strategic value for answering "does this tool/skill help or hurt?"
@@ -13,7 +13,7 @@ These are extracted from `.jsonl` transcript files in `AppData\Roaming\Code\User
 |---|---|---|---|
 | `session_id` | `session.start` event | string | Unique per chat session |
 | `session_started_at` | `session.start` timestamp | datetime | When the chat session opened |
-| `session_ended_at` | Last event timestamp | datetime | Approximate — last recorded event |
+| `session_ended_at` | Last event timestamp | datetime | Approximate (last recorded event) |
 | `session_duration_minutes` | Derived | float | `ended_at - started_at` |
 | `copilot_version` | `session.start.data.copilotVersion` | string | Extension version |
 | `vscode_version` | `session.start.data.vscodeVersion` | string | IDE version |
@@ -30,9 +30,9 @@ These are extracted from `.jsonl` transcript files in `AppData\Roaming\Code\User
 
 ### Why These Matter
 - `assistant_turns` ≈ premium requests consumed (most actionable quota metric)
-- `tool_calls_per_turn` measures agent mode intensity — higher = more autonomous working
+- `tool_calls_per_turn` measures agent mode intensity; higher = more autonomous working
 - `skills_activated` is the key variable for testing "does using skill X affect session cost?"
-- `session_duration_minutes` captures "how long did this task take?" — combined with requests, gives cost-per-minute
+- `session_duration_minutes` captures "how long did this task take?"; combined with requests, gives cost-per-minute
 
 ---
 
@@ -65,7 +65,7 @@ Computed from Tier 1 data across sessions.
 
 ## Tier 3: Requiring Manual Input (User-Provided)
 
-These require a quick rating at the end of a session. High-value for ROI analysis — without them, quality is unmeasurable.
+These require a quick rating at the end of a session. High-value for ROI analysis; without them, quality is unmeasurable.
 
 | Field | Input | Type | Notes |
 |---|---|---|---|
@@ -104,8 +104,8 @@ The `toolu_bdrk_` prefix in tool call IDs appears to indicate Claude served via 
 
 | Data Point | Why Not Available |
 |---|---|
-| **Claude.ai Pro token usage** | No API, no local files, no export. Would require a browser extension that intercepts network traffic — out of scope for MVP |
-| **Actual Copilot billing data** | GitHub does not expose individual billing via API — only visible at `github.com/settings/billing` |
+| **Claude.ai Pro token usage** | No API, no local files, no export. Would require a browser extension that intercepts network traffic (out of scope for MVP) |
+| **Actual Copilot billing data** | GitHub does not expose individual billing via API; only visible at `github.com/settings/billing` |
 | **Real-time token streaming counts** | Copilot streams responses; token counts are not written to transcript files. Would need to intercept the SSE stream |
 | **Completion context window size** | Not in any accessible log |
 | **Which inline completions were accepted** | VS Code telemetry sends this to GitHub but no local copy of acceptance events is kept |
@@ -152,4 +152,4 @@ LOWER PRIORITY (if this project gets traction)
 
 **Note**: "Base model" requests (GPT-5 mini equivalent) do not count against the premium request quota. Only requests to premium models (Claude Sonnet, GPT-4o, Claude Opus, etc.) consume quota.
 
-The VS Code Copilot transcript does not explicitly label which requests used premium vs base models. The `assistant_turns` count is an upper bound on premium requests — some turns may have used the base model if you switched models or used fallback.
+The VS Code Copilot transcript does not explicitly label which requests used premium vs base models. The `assistant_turns` count is an upper bound on premium requests; some turns may have used the base model if you switched models or used fallback.

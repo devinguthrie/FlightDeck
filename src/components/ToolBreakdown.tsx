@@ -33,6 +33,7 @@ const SKILL_READERS = new Set([
 ]);
 const SKILL_PAGE_SIZE = 8;
 const SKILL_PAGE_SIZE_OPTIONS = [8, 16, 24, 40];
+type SkillSortKey = "sessions" | "avgRequests" | "avgQuality" | "qualityPerReq" | "lift";
 
 function isCoreSkillTool(name: string): boolean {
   return SKILL_READERS.has(name);
@@ -42,15 +43,47 @@ export default function ToolBreakdown({ topTools, skillStats, totalRated }: Prop
   const hasQualitySignal = totalRated >= 5;
   const [skillPage, setSkillPage] = useState(0);
   const [skillPageSize, setSkillPageSize] = useState(SKILL_PAGE_SIZE);
-  const skillPageCount = Math.max(1, Math.ceil(skillStats.length / skillPageSize));
+  const [skillSortKey, setSkillSortKey] = useState<SkillSortKey>("sessions");
+  const [skillSortDir, setSkillSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleSkillSort(key: SkillSortKey) {
+    if (key === skillSortKey) {
+      setSkillSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSkillSortKey(key);
+      setSkillSortDir("desc");
+    }
+    setSkillPage(0);
+  }
+
+  const sortedSkillStats = useMemo(() => {
+    const arr = [...skillStats];
+    const dir = skillSortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (skillSortKey) {
+        case "sessions":     return dir * (a.sessions - b.sessions);
+        case "avgRequests":  return dir * (a.avgRequests - b.avgRequests);
+        case "avgQuality":   return dir * ((a.avgQuality ?? 0) - (b.avgQuality ?? 0));
+        case "qualityPerReq": {
+          const qa = qualityPerRequest(a.avgQuality, a.avgRequests) ?? 0;
+          const qb = qualityPerRequest(b.avgQuality, b.avgRequests) ?? 0;
+          return dir * (qa - qb);
+        }
+        case "lift":        return dir * ((a.liftVsBaseline ?? 0) - (b.liftVsBaseline ?? 0));
+        default:            return 0;
+      }
+    });
+    return arr;
+  }, [skillStats, skillSortKey, skillSortDir]);
+  const skillPageCount = Math.max(1, Math.ceil(sortedSkillStats.length / skillPageSize));
   const currentSkillPage = Math.min(skillPage, skillPageCount - 1);
   const paginatedSkillStats = useMemo(
     () =>
-      skillStats.slice(
+      sortedSkillStats.slice(
         currentSkillPage * skillPageSize,
         currentSkillPage * skillPageSize + skillPageSize
       ),
-    [currentSkillPage, skillPageSize, skillStats]
+    [currentSkillPage, skillPageSize, sortedSkillStats]
   );
 
   return (
@@ -122,13 +155,23 @@ export default function ToolBreakdown({ topTools, skillStats, totalRated }: Prop
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
                     <th className="pb-2 font-medium">Skill</th>
-                    <th className="pb-2 font-medium text-right">Sessions</th>
-                    <th className="pb-2 font-medium text-right">Avg Req</th>
+                    <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSkillSort("sessions")}>
+                      Sessions {skillSortKey === "sessions" ? (skillSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                    </th>
+                    <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSkillSort("avgRequests")}>
+                      Avg Req {skillSortKey === "avgRequests" ? (skillSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                    </th>
                     {hasQualitySignal && (
                       <>
-                        <th className="pb-2 font-medium text-right">Avg Quality</th>
-                        <th className="pb-2 font-medium text-right">Quality/100 Req</th>
-                        <th className="pb-2 font-medium text-right">Lift vs Baseline</th>
+                        <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSkillSort("avgQuality")}>
+                          Avg Quality {skillSortKey === "avgQuality" ? (skillSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                        </th>
+                        <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSkillSort("qualityPerReq")}>
+                          Quality/100 Req {skillSortKey === "qualityPerReq" ? (skillSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                        </th>
+                        <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleSkillSort("lift")}>
+                          Lift vs Baseline {skillSortKey === "lift" ? (skillSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                        </th>
                       </>
                     )}
                   </tr>
@@ -198,7 +241,7 @@ export default function ToolBreakdown({ topTools, skillStats, totalRated }: Prop
                 page={currentSkillPage}
                 pageCount={skillPageCount}
                 pageSize={skillPageSize}
-                totalItems={skillStats.length}
+                totalItems={sortedSkillStats.length}
                 itemLabel="skills"
                 pageSizeOptions={SKILL_PAGE_SIZE_OPTIONS}
                 onPageChange={setSkillPage}

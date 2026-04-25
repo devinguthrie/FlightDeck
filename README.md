@@ -1,10 +1,10 @@
 # FlightDeck
 
-Local analytics for GitHub Copilot power users. Tracks quota burn, session efficiency, skill impact, and tool latency — entirely on your machine.
+Local analytics for GitHub Copilot power users. Tracks quota burn, session efficiency, skill impact, and tool latency, entirely on your machine.
 
 No external database. No hosted telemetry. No cloud lock-in.
 
-![Premium Insights — KPI cards and efficiency panels](docs/screenshots/dark-premium-insights.png)
+![Premium Insights: KPI cards and efficiency panels](docs/screenshots/dark-premium-insights.png)
 
 ## Why This Exists
 
@@ -18,18 +18,18 @@ Raw Copilot usage counts tell you how much you used it, not whether it was worth
 
 ## Features
 
-- **Quota burn tracking** — live chart of billed `premiumUsed` from the Copilot API, with automatic plan-upgrade detection
-- **Quota exhaustion projection** — burn rate from recent snapshots, with confidence rating based on coverage depth
-- **Divergence analysis** — compares transcript turns vs. billed premium per day; flags high-divergence days
-- **Efficiency trend** — turns/premium ratio over time, switchable from 3h to 30d with moving average
-- **Best efficiency days** — surfaces the days with your highest turns/premium and the skills present on those days
-- **Session list** — all parsed transcript sessions with model, tool call count, estimated tokens, detected skills, and quality ratings
-- **Skill impact table** — avg requests and sessions per recognized workflow skill
-- **Tool breakdown** — all-time tool call frequency and P50/P95 latency per tool
-- **Proxy capture** — MITM proxy intercepts CLI API traffic for exact token counts and model latency
-- **Token volume** — daily input/output token chart + per-workspace breakdown
-- **Rate limit events** — automatic detection of 429 and context overflow errors, deduplicated with occurrence counts
-- **Dark mode** — full dark theme with system preference detection and persistent toggle
+- **Quota burn tracking**: live chart of billed `premiumUsed` from the Copilot API, with automatic plan-upgrade detection
+- **Quota exhaustion projection**: burn rate from recent snapshots, with confidence rating based on coverage depth
+- **Divergence analysis**: compares transcript turns vs. billed premium per day; flags high-divergence days
+- **Efficiency trend**: turns/premium ratio over time, switchable from 3h to 30d with moving average
+- **Best efficiency days**: surfaces the days with your highest turns/premium and the skills present on those days
+- **Session list**: all parsed transcript sessions with model, tool call count, estimated tokens, detected skills, and quality ratings
+- **Skill impact table**: avg requests and sessions per recognized workflow skill
+- **Tool breakdown**: all-time tool call frequency and P50/P95 latency per tool
+- **Proxy capture**: MITM proxy intercepts CLI API traffic for exact token counts and model latency
+- **Token volume**: daily input/output token chart + per-workspace breakdown
+- **Rate limit events**: automatic detection of 429 and context overflow errors, deduplicated with occurrence counts
+- **Dark mode**: full dark theme with system preference detection and persistent toggle
 
 ## Screenshots
 
@@ -71,7 +71,7 @@ Execution time per tool call type, with P50 and P95 across all recorded sessions
 
 ### Proxy Capture
 
-MITM proxy intercepts Copilot CLI API traffic for exact token counts and latency. Shows per-model breakdown: request count, share of total, prompt tokens, completion tokens, and avg latency. VS Code chat uses its own OAuth flow and does not route through the proxy — it is tracked via transcripts instead.
+MITM proxy intercepts Copilot CLI API traffic for exact token counts and latency. Shows per-model breakdown: request count, share of total, prompt tokens, completion tokens, and avg latency. VS Code chat uses its own OAuth flow and does not route through the proxy; it is tracked via transcripts instead.
 
 ![Proxy Capture](docs/screenshots/dark-proxy-capture.png)
 
@@ -87,12 +87,12 @@ Daily input/output token chart for the last 30 days, plus a per-workspace breakd
 |-------|-----------|
 | Framework | [Next.js 16](https://nextjs.org/) (App Router, `"use client"`) |
 | Language | TypeScript 5, strict mode |
-| Styling | Tailwind CSS 3 — `darkMode: "class"` with full dark palette |
+| Styling | Tailwind CSS 3: `darkMode: "class"` with full dark palette |
 | Charts | [Recharts](https://recharts.org/) 2 |
-| Database | SQLite via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — local `~/.ai-usage/sessions.db` |
+| Database | SQLite via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3): local `~/.ai-usage/sessions.db` |
 | Testing | Vitest + Testing Library |
-| Extension | VS Code extension (TypeScript) — polls Copilot quota API every 15 min |
-| Proxy | [mitmproxy](https://mitmproxy.org/) — intercepts CLI HTTPS traffic |
+| Extension | VS Code extension (TypeScript): polls Copilot quota API every 15 min |
+| Proxy | [mitmproxy](https://mitmproxy.org/): intercepts CLI HTTPS traffic |
 
 Everything runs locally. The only network calls are the ones your Copilot tools already make.
 
@@ -113,11 +113,11 @@ FlightDeck combines three independent sources:
 
 | Source | What it captures | Setup |
 |--------|-----------------|-------|
-| VS Code transcripts | Session activity, tool calls, skill tags, turn counts | Automatic — read from `%APPDATA%\Code\User\workspaceStorage\` |
+| VS Code transcripts | Session activity, tool calls, skill tags, turn counts | Automatic; read from `%APPDATA%\Code\User\workspaceStorage\` |
 | Quota snapshots | Billed `premiumUsed` direct from the GitHub Copilot API | VS Code extension (polls every 15 min) |
 | MITM proxy | Exact token counts, model, and latency for CLI requests | One-time proxy + cert setup |
 
-Transcript activity and billed quota are tracked separately on purpose. Divergence between the two is a signal in its own right — FlightDeck surfaces it explicitly in the Divergence Analysis panel.
+Transcript activity and billed quota are tracked separately on purpose. Divergence between the two is a signal in its own right. FlightDeck surfaces it explicitly in the Divergence Analysis panel.
 
 ## Header Status Pills
 

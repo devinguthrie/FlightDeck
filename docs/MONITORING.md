@@ -1,4 +1,4 @@
-# FlightDeck — Monitoring Your Copilot CLI Usage
+# FlightDeck: Monitoring Your Copilot CLI Usage
 
 This document explains what FlightDeck measures, where each piece of data comes from, and how to verify everything is working.
 
@@ -6,7 +6,7 @@ This document explains what FlightDeck measures, where each piece of data comes 
 
 ## A Note on OpenTelemetry and the Copilot CLI
 
-The [GitHub Copilot SDK OpenTelemetry docs](https://docs.github.com/en/copilot/how-tos/copilot-sdk/observability/opentelemetry) are **not** relevant to the interactive `copilot` terminal CLI. That page covers the Copilot SDK — a separate tool for developers building applications that programmatically drive the CLI as a subprocess. When used that way, the SDK can pass an OTEL endpoint to the CLI process it launches.
+The [GitHub Copilot SDK OpenTelemetry docs](https://docs.github.com/en/copilot/how-tos/copilot-sdk/observability/opentelemetry) are **not** relevant to the interactive `copilot` terminal CLI. That page covers the Copilot SDK, a separate tool for developers building applications that programmatically drive the CLI as a subprocess. When used that way, the SDK can pass an OTEL endpoint to the CLI process it launches.
 
 **The interactive `copilot` CLI has no user-facing OTEL configuration.** There is no `~/.copilot/config.json` field for it, no documented environment variable, and no `/help monitoring` slash command.
 
@@ -25,15 +25,15 @@ FlightDeck covers the monitoring gap with two local data sources described below
 %APPDATA%\Code\User\workspaceStorage\{hash}\GitHub.copilot-chat\transcripts\*.jsonl
 ```
 
-The `{hash}` folder varies per workspace. FlightDeck scans all workspace storage hashes automatically — no configuration needed.
+The `{hash}` folder varies per workspace. FlightDeck scans all workspace storage hashes automatically (no configuration needed).
 
 **What FlightDeck extracts:**
 
 | Metric | How |
 |---|---|
-| `assistant_turns` | Count of `assistant.turn_start` events — primary proxy for premium requests |
+| `assistant_turns` | Count of `assistant.turn_start` events: primary proxy for premium requests |
 | `tool_calls_total` | Count of `tool.execution_start` events |
-| `tool_calls_by_name` | Grouped by `toolName` field — shows which tools ran most |
+| `tool_calls_by_name` | Grouped by `toolName` field: shows which tools ran most |
 | `skills_activated` | Tool calls where the path matches a `SKILL.md` file |
 | `session_duration_minutes` | Last event timestamp minus first event timestamp |
 | `estimated_tokens` | Total message character count ÷ 4 (industry-standard approximation) |
@@ -108,7 +108,7 @@ Stored in `~\.ai-usage\data.json` under the `config` key. Editable via the Setti
 
 ## Verifying the Extension Is Running
 
-1. Check the VS Code status bar — look for `$(graph) XX%` in the bottom-right
+1. Check the VS Code status bar: look for `$(graph) XX%` in the bottom-right
 2. Run the command **"Copilot Telemetry: Refresh Now"** from the Command Palette (`Ctrl+Shift+P`)
 3. Open the Output panel (`View → Output`) and select **"Copilot Telemetry"** from the dropdown
 4. Check that `%APPDATA%\copilot-telemetry\snapshots.jsonl` exists and is being appended to
@@ -122,7 +122,7 @@ Open `http://localhost:3000` while `npm run dev` is running. The Stats Cards at 
 - **Requests This Month** — sourced from quota snapshots (real) or transcript estimates (fallback)
 - **Data source indicator** — "confirmed from GitHub" when snapshots are fresh (< 1 hour), "estimated" otherwise
 
-If the two sources diverge significantly (> 20%), it likely indicates multi-device usage — sessions from another machine are consuming quota that transcripts on this machine don't reflect.
+If the two sources diverge significantly (> 20%), it likely indicates multi-device usage; sessions from another machine are consuming quota that transcripts on this machine don't reflect.
 
 ---
 
@@ -133,12 +133,12 @@ If the two sources diverge significantly (> 20%), it likely indicates multi-devi
 | `%APPDATA%\copilot-telemetry\snapshots.jsonl` | VS Code extension | Dashboard `/api/quota-snapshots` | Quota snapshots every N minutes |
 | `%APPDATA%\Code\User\workspaceStorage\*\GitHub.copilot-chat\transcripts\*.jsonl` | VS Code Copilot Chat | Dashboard `/api/sessions` | Full session event logs |
 | `~\.ai-usage\data.json` | Dashboard | Dashboard | Config, quality ratings, session cache |
-| `~\.copilot\config.json` | Copilot CLI | Copilot CLI | CLI settings (plugins, auth — not for FlightDeck) |
+| `~\.copilot\config.json` | Copilot CLI | Copilot CLI | CLI settings (plugins, auth; not for FlightDeck) |
 
 ---
 
 ## Further Reading
 
-- [DATA_POINTS.md](DATA_POINTS.md) — complete catalog of every metric, its source, and its strategic value
+- [DATA_POINTS.md](DATA_POINTS.md): complete catalog of every metric, its source, and its strategic value
 - [PROXY_SETUP.md](PROXY_SETUP.md) — MITM proxy setup for CLI capture
 - [MODEL_LIMITS.md](MODEL_LIMITS.md) — rate limit tracking and model constraints

@@ -1,12 +1,40 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { ModelLimit, RateLimitErrorSummary } from "@/lib/db";
+
+type LimitSortKey = "contextWindow" | "maxOutput" | "requestsPerMinute" | "concurrent";
 
 export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hideTitle?: boolean; embedded?: boolean }) {
   const [limits, setLimits] = useState<ModelLimit[]>([]);
   const [errors, setErrors] = useState<RateLimitErrorSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [limitSortKey, setLimitSortKey] = useState<LimitSortKey>("contextWindow");
+  const [limitSortDir, setLimitSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleLimitSort(key: LimitSortKey) {
+    if (key === limitSortKey) {
+      setLimitSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setLimitSortKey(key);
+      setLimitSortDir("desc");
+    }
+  }
+
+  const sortedLimits = useMemo(() => {
+    const arr = [...limits];
+    const dir = limitSortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (limitSortKey) {
+        case "contextWindow":    return dir * (a.contextWindowTokens - b.contextWindowTokens);
+        case "maxOutput":        return dir * ((a.maxOutputTokens ?? 0) - (b.maxOutputTokens ?? 0));
+        case "requestsPerMinute": return dir * ((a.requestsPerMinute ?? 0) - (b.requestsPerMinute ?? 0));
+        case "concurrent":       return dir * ((a.concurrentRequests ?? 0) - (b.concurrentRequests ?? 0));
+        default:                 return 0;
+      }
+    });
+    return arr;
+  }, [limits, limitSortKey, limitSortDir]);
 
   useEffect(() => {
     const fetchLimits = async () => {
@@ -46,15 +74,23 @@ export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hide
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-3 py-2 text-left">Model</th>
-                  <th className="px-3 py-2 text-right">Context Window</th>
-                  <th className="px-3 py-2 text-right">Max Output</th>
-                  <th className="px-3 py-2 text-right">Requests/min</th>
-                  <th className="px-3 py-2 text-right">Concurrent</th>
+                  <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleLimitSort("contextWindow")}>
+                    Context Window {limitSortKey === "contextWindow" ? (limitSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
+                  <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleLimitSort("maxOutput")}>
+                    Max Output {limitSortKey === "maxOutput" ? (limitSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
+                  <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleLimitSort("requestsPerMinute")}>
+                    Requests/min {limitSortKey === "requestsPerMinute" ? (limitSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
+                  <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleLimitSort("concurrent")}>
+                    Concurrent {limitSortKey === "concurrent" ? (limitSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
                   <th className="px-3 py-2 text-left">Source</th>
                 </tr>
               </thead>
               <tbody>
-                {limits.map((limit) => (
+                {sortedLimits.map((limit) => (
                   <tr key={limit.modelName} className="border-t hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono">{limit.modelName}</td>
                     <td className="px-3 py-2 text-right text-gray-700">

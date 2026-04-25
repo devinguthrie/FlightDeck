@@ -248,10 +248,21 @@ export default function DivergencePanel({
   hideTitle = false,
   embedded = false,
 }: Props) {
-  const [trendWindow, setTrendWindow] = useState<TimeWindow>("24h");
+  const [trendWindow, setTrendWindow] = useState<TimeWindow>("7d");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
+  const [divSortKey, setDivSortKey] = useState<"date" | "transcript" | "billed" | "ratio">("ratio");
+  const [divSortDir, setDivSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleDivSort(key: "date" | "transcript" | "billed" | "ratio") {
+    if (key === divSortKey) {
+      setDivSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setDivSortKey(key);
+      setDivSortDir("desc");
+    }
+  }
 
   const rows = useMemo(() => {
     const premiumDaily = buildPremiumDailyDeltas(quotaTimeSeries);
@@ -281,10 +292,20 @@ export default function DivergencePanel({
     (row) => row.transcriptTurns > 0 && (!row.billedPremium || row.billedPremium === 0),
   ).length;
   const highDivergenceDays = overlapRows.filter((row) => (row.turnsPerPremium ?? 0) >= 12).length;
-  const topDivergenceDays = [...rows]
-    .filter((row) => row.turnsPerPremium !== null)
-    .sort((a, b) => (b.turnsPerPremium ?? 0) - (a.turnsPerPremium ?? 0))
-    .slice(0, 5);
+  const topDivergenceDays = useMemo(() => {
+    const base = [...rows].filter((row) => row.turnsPerPremium !== null);
+    const dir = divSortDir === "asc" ? 1 : -1;
+    base.sort((a, b) => {
+      switch (divSortKey) {
+        case "date":       return dir * a.date.localeCompare(b.date);
+        case "transcript": return dir * (a.transcriptTurns - b.transcriptTurns);
+        case "billed":     return dir * ((a.billedPremium ?? 0) - (b.billedPremium ?? 0));
+        case "ratio":      return dir * ((a.turnsPerPremium ?? 0) - (b.turnsPerPremium ?? 0));
+        default:           return 0;
+      }
+    });
+    return base.slice(0, 5);
+  }, [rows, divSortKey, divSortDir]);
 
   const hourlyTrend = useMemo(() => {
     const premiumByHour = buildPremiumHourlyDeltas(quotaTimeSeries);
@@ -604,10 +625,18 @@ export default function DivergencePanel({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
-                  <th className="pb-2 font-medium">Day</th>
-                  <th className="pb-2 font-medium text-right">Transcript</th>
-                  <th className="pb-2 font-medium text-right">Billed</th>
-                  <th className="pb-2 font-medium text-right">Turns / Premium</th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleDivSort("date")}>
+                    Day {divSortKey === "date" ? (divSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
+                  <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleDivSort("transcript")}>
+                    Transcript {divSortKey === "transcript" ? (divSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
+                  <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleDivSort("billed")}>
+                    Billed {divSortKey === "billed" ? (divSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
+                  <th className="pb-2 font-medium text-right cursor-pointer select-none hover:text-gray-700 whitespace-nowrap" onClick={() => handleDivSort("ratio")}>
+                    Turns / Premium {divSortKey === "ratio" ? (divSortDir === "asc" ? "↑" : "↓") : <span className="text-gray-300">↕</span>}
+                  </th>
                   <th className="pb-2 font-medium">Read</th>
                 </tr>
               </thead>
