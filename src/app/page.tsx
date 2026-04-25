@@ -12,154 +12,11 @@ import { ModelLimitsPanel } from "@/components/ModelLimitsPanel";
 import PaginationControls from "@/components/PaginationControls";
 import { useTheme } from "@/lib/useTheme";
 import type { PlanKey } from "@/lib/pricing";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Config {
-  plan: PlanKey;
-  billingCycleStartDay: number;
-  additionalRequests: number;
-  planQuota: number;
-}
-
-interface DailyBucket {
-  date: string;
-  requests: number;
-  sessions: number;
-  toolCalls: number;
-  skills: string[];
-  inputTokens: number;
-  outputTokens: number;
-}
-
-interface IntradayBucket {
-  hour: string;
-  transcriptTurns: number;
-  toolCalls: number;
-}
-
-interface ProjectionPoint {
-  date: string;
-  actual: number | null;
-  projected: number | null;
-}
-
-interface StatsData {
-  cycleStart: string;
-  cycleEnd: string;
-  requestsThisCycle: number;
-  planQuota: number;
-  requestsRemaining: number;
-  daysRemainingEstimate: number | null;
-  projectedExhaustionDate: string | null;
-  dailyBurnRate: number;
-  cycleUserTurns: number;
-  cycleAssistantTurns: number;
-  cycleToolCalls: number;
-  cycleDurationMinutes: number;
-  cycleActiveMinutes: number;
-  premiumBurnPerUserPrompt: number | null;
-  requestDensityPerMinute: number;
-  toolOverheadRatio: number;
-  promptEfficiencyPer100Turns: number | null;
-  qualityToolOverheadCorrelation: number | null;
-  dailyBuckets: DailyBucket[];
-  intradayBuckets: IntradayBucket[];
-  projectionPoints: ProjectionPoint[];
-  topTools: Array<{ name: string; count: number }>;
-  skillStats: Array<{
-    name: string;
-    sessions: number;
-    avgRequests: number;
-    avgQuality: number | null;
-    sampleSize: number;
-    qualityPer100Req: number | null;
-    liftVsBaseline: number | null;
-  }>;
-  marginalQualityCurve: Array<{
-    bucket: string;
-    minRequests: number;
-    maxRequests: number;
-    sessions: number;
-    avgQuality: number | null;
-    avgRequests: number;
-  }>;
-  totalSessions: number;
-  totalRequests: number;
-  totalRated: number;
-  avgQuality: number | null;
-  sevenDayRequests: number;
-  sevenDayBurnRate: number;
-  avgContextSaturation: number | null;
-  toolLatencies: Array<{
-    name: string;
-    count: number;
-    avgMs: number;
-    p50Ms: number;
-    p95Ms: number;
-  }>;
-  proxyStats: {
-    totalRequests: number;
-    cliRequests: number;
-    vscodeRequests: number;
-    proxyActive: boolean;
-    cliActive: boolean;
-    lastCapturedAt: string | null;
-    modelBreakdown: Array<{ model: string; count: number; avgLatencyMs: number; totalPromptTokens: number; totalCompletionTokens: number }>;
-    tokenAccuracy: {
-      exactTotalTokens: number;
-      estimatedTotalTokens: number;
-      accuracyRatio: number;
-    } | null;
-  };
-  outputInputRatio: number | null;
-  topWorkspacesByTokens: Array<{ workspace: string; inputTokens: number; outputTokens: number }>;
-}
-
-interface QuotaDataPoint {
-  timestamp: string;
-  chatUsed: number;
-  completionsUsed: number;
-  premiumUsed: number;
-}
-
-interface QuotaSummary {
-  available: boolean;
-  latestRecordedAt: string | null;
-  ageMinutes: number | null;
-  chatEntitlement: number;
-  chatUsed: number;
-  chatRemaining: number;
-  completionsEntitlement: number;
-  completionsUsed: number;
-  completionsRemaining: number;
-  premiumEntitlement: number;
-  premiumUsed: number;
-  premiumRemaining: number;
-  quotaResetDate: string | null;
-  copilotPlan: string | null;
-  timeSeries: QuotaDataPoint[];
-}
-
-interface Session {
-  sessionId: string;
-  workspaceName: string;
-  startedAt: string;
-  endedAt: string;
-  durationMinutes: number;
-  activeMinutes: number;
-  premiumRequests: number;
-  toolCallsTotal: number;
-  skillsActivated: string[];
-  estimatedTotalTokens: number;
-  activeModel: string | null;
-  usedModels: string[];
-  rating: {
-    quality: number;
-    taskCompleted: string;
-    note: string;
-  } | null;
-}
+import type { Config } from "@/lib/storage";
+import type { DailyBucket, StatsResponse, ProjectionPoint } from "@/lib/statsEngine";
+import type { QuotaDataPoint, QuotaSummary } from "@/lib/snapshotParser";
+import type { IntradayActivityBucket } from "@/lib/transcriptParser";
+import type { SessionWithRating } from "@/lib/db";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -321,8 +178,8 @@ function CollapsibleModule({
 
 export default function Dashboard() {
   const [theme, toggleTheme] = useTheme();
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [sessions, setSessions] = useState<SessionWithRating[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
   const [quota, setQuota] = useState<QuotaSummary | null>(null);
   const [avgDays, setAvgDays] = useState(7);
@@ -338,7 +195,7 @@ export default function Dashboard() {
       const wsParam = selectedWorkspace ? `&workspace=${encodeURIComponent(selectedWorkspace)}` : "";
       const res = await fetch(`/api/stats?avgDays=${avgDays}${wsParam}`, { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as StatsData;
+      const data = (await res.json()) as StatsResponse;
       setStats(data);
       // Only update the workspace list from unfiltered loads so the dropdown isn't cleared
       if (!selectedWorkspace) {
@@ -353,7 +210,7 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/sessions", { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
-      setSessions((await res.json()) as Session[]);
+      setSessions((await res.json()) as SessionWithRating[]);
     } catch (e) {
       setError(String(e));
     }

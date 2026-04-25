@@ -14,12 +14,7 @@ import {
   ReferenceLine,
   Legend,
 } from "recharts";
-
-interface ProjectionPoint {
-  date: string;
-  actual: number | null;
-  projected: number | null;
-}
+import type { ProjectionPoint } from "@/lib/statsEngine";
 
 interface Props {
   points: ProjectionPoint[];

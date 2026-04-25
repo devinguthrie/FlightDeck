@@ -40,6 +40,23 @@ export interface QualityRating {
   ratedAt: string;
 }
 
+/** Session row with quality rating merged in (matches /api/sessions response shape). */
+export type SessionWithRating = ParsedSession & { rating: QualityRating | null };
+
+/** Grouped rate-limit error summary returned by the /api/model-limits endpoint. */
+export interface RateLimitErrorSummary {
+  model: string;
+  errorCode: string;
+  errorMessage: string;
+  count: number;
+  latestTs: string;
+  occurrences: Array<{
+    ts: string;
+    rateLimitRemaining: number | null;
+    rateLimitReset: string | null;
+  }>;
+}
+
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
 const DATA_DIR = path.join(os.homedir(), ".ai-usage");
@@ -792,30 +809,8 @@ export function getRecentRateLimitErrors(): Array<{
   }));
 }
 
-export function getRecentRateLimitErrorSummaries(): Array<{
-  model: string;
-  errorCode: string;
-  errorMessage: string;
-  count: number;
-  latestTs: string;
-  occurrences: Array<{
-    ts: string;
-    rateLimitRemaining: number | null;
-    rateLimitReset: string | null;
-  }>;
-}> {
-  const groups = new Map<string, {
-    model: string;
-    errorCode: string;
-    errorMessage: string;
-    count: number;
-    latestTs: string;
-    occurrences: Array<{
-      ts: string;
-      rateLimitRemaining: number | null;
-      rateLimitReset: string | null;
-    }>;
-  }>();
+export function getRecentRateLimitErrorSummaries(): RateLimitErrorSummary[] {
+  const groups = new Map<string, RateLimitErrorSummary>();
 
   for (const error of getRecentRateLimitErrors()) {
     const key = `${error.model}::${error.errorCode}::${error.errorMessage}`;

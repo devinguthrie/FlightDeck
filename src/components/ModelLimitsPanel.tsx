@@ -1,34 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-
-interface ModelLimit {
-  modelName: string;
-  contextWindowTokens: number;
-  maxOutputTokens: number | null;
-  requestsPerMinute: number | null;
-  concurrentRequests: number | null;
-  discoveredAt: string;
-  lastUpdatedAt: string;
-  source: string;
-}
-
-interface RateLimitError {
-  model: string;
-  errorCode: string;
-  errorMessage: string;
-  count: number;
-  latestTs: string;
-  occurrences: Array<{
-    ts: string;
-    rateLimitRemaining: number | null;
-    rateLimitReset: string | null;
-  }>;
-}
+import type { ModelLimit, RateLimitErrorSummary } from "@/lib/db";
 
 export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hideTitle?: boolean; embedded?: boolean }) {
   const [limits, setLimits] = useState<ModelLimit[]>([]);
-  const [errors, setErrors] = useState<RateLimitError[]>([]);
+  const [errors, setErrors] = useState<RateLimitErrorSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

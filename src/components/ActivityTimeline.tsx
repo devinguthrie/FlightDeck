@@ -10,13 +10,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-
-interface DailyBucket {
-  date: string;
-  requests: number;
-  sessions: number;
-  toolCalls: number;
-}
+import type { DailyBucket } from "@/lib/statsEngine";
 
 interface Props {
   data: DailyBucket[];

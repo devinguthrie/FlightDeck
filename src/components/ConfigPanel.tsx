@@ -3,13 +3,7 @@
 import { useEffect, useState } from "react";
 import { PLANS } from "@/lib/pricing";
 import type { PlanKey } from "@/lib/pricing";
-
-interface Config {
-  plan: PlanKey;
-  billingCycleStartDay: number;
-  additionalRequests: number;
-  planQuota: number;
-}
+import type { Config } from "@/lib/storage";
 
 interface Props {
   config: Config;

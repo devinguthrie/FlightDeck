@@ -3,29 +3,28 @@
 import { useMemo, useState } from "react";
 import PaginationControls from "@/components/PaginationControls";
 import { SessionModelBadge } from "@/components/SessionModelBadge";
+import type { ParsedSession } from "@/lib/transcriptParser";
+import type { QualityRating } from "@/lib/db";
 
-interface Session {
-  sessionId: string;
-  workspaceName: string;
-  startedAt: string;
-  endedAt: string;
-  durationMinutes: number;
-  activeMinutes: number;
-  premiumRequests: number;
-  toolCallsTotal: number;
-  skillsActivated: string[];
-  estimatedTotalTokens: number;
-  activeModel: string | null;
-  usedModels: string[];
-  rating: {
-    quality: number;
-    taskCompleted: string;
-    note: string;
-  } | null;
-}
+/** Subset of ParsedSession fields that SessionList renders, plus the merged rating. */
+type SessionRow = Pick<
+  ParsedSession,
+  | "sessionId"
+  | "workspaceName"
+  | "startedAt"
+  | "endedAt"
+  | "durationMinutes"
+  | "activeMinutes"
+  | "premiumRequests"
+  | "toolCallsTotal"
+  | "skillsActivated"
+  | "estimatedTotalTokens"
+  | "activeModel"
+  | "usedModels"
+> & { rating: QualityRating | null };
 
 interface Props {
-  sessions: Session[];
+  sessions: SessionRow[];
   onRated: () => void; // trigger parent re-fetch
   hideTitle?: boolean;
   embedded?: boolean;
@@ -65,7 +64,7 @@ function RatingCell({
   session,
   onRated,
 }: {
-  session: Session;
+  session: SessionRow;
   onRated: () => void;
 }) {
   const [quality, setQuality] = useState<number>(session.rating?.quality ?? 0);
@@ -204,7 +203,7 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
     currentPage * pageSize + pageSize
   );
 
-  function sessionFlags(s: Session): string[] {
+  function sessionFlags(s: SessionRow): string[] {
     const flags: string[] = [];
     const overhead = s.premiumRequests > 0 ? s.toolCallsTotal / s.premiumRequests : 0;
 

@@ -13,13 +13,7 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
-
-interface QuotaDataPoint {
-  timestamp: string;
-  chatUsed: number;
-  completionsUsed: number;
-  premiumUsed: number;
-}
+import type { QuotaDataPoint } from "@/lib/snapshotParser";
 
 interface Props {
   timeSeries: QuotaDataPoint[];

@@ -140,5 +140,5 @@ If the two sources diverge significantly (> 20%), it likely indicates multi-devi
 ## Further Reading
 
 - [DATA_POINTS.md](DATA_POINTS.md) — complete catalog of every metric, its source, and its strategic value
-- [EXTENSION_PLAN.md](EXTENSION_PLAN.md) — architecture of the VS Code extension and its API
-- [DESIGN.md](DESIGN.md) — overall dashboard design and ROI calculation methodology
+- [PROXY_SETUP.md](PROXY_SETUP.md) — MITM proxy setup for CLI capture
+- [MODEL_LIMITS.md](MODEL_LIMITS.md) — rate limit tracking and model constraints

@@ -1,4 +1,4 @@
-# AI Usage Dashboard — Data Points Reference
+# FlightDeck — Data Points Reference
 
 This document catalogs every data point that could be meaningful for measuring AI usage ROI.
 Organized by: availability, source, and strategic value for answering "does this tool/skill help or hurt?"
@@ -86,15 +86,12 @@ Even 30 days of daily ratings creates statistically meaningful patterns.
 
 ---
 
-## Tier 4: Theoretically Available (Not Implemented in MVP)
+## Tier 4: Theoretically Available (Not Implemented)
 
 | Data Point | Source | What's Needed |
 |---|---|---|
-| **Exact token counts** | VS Code extension intercept | Would require a local HTTPS proxy or VS Code extension that intercepts the Copilot API calls. Complex but exact. |
-| **Model name per request** | VS Code extension / API | Can see Claude Sonnet requests vs GPT-4o by intercepting the API; tool_use_ids starting with `toolu_bdrk_` suggest Claude on Bedrock |
 | **Suggestion acceptance rate** | VS Code Copilot telemetry | Available in VS Code extension logs but undocumented format; could parse `GitHub Copilot Log.log` files |
 | **Inline completion count** | VS Code Copilot logs | VS Code logs show completion events; total completions per session |
-| **Per-request latency** | Tool execution start/end timestamps | `tool.execution_start` + `tool.execution_complete` timestamps → tool latency |
 | **Context file count** | `tool.execution_start` args for `read_file` | Which files were read → context footprint |
 | **Copilot org-level metrics** | GitHub API (Business/Enterprise only) | Requires `read:org` scope on a Business/Enterprise org with 5+ seats |
 

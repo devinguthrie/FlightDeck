@@ -12,21 +12,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-
-interface ToolCount {
-  name: string;
-  count: number;
-}
-
-interface SkillStats {
-  name: string;
-  sessions: number;
-  avgRequests: number;
-  avgQuality: number | null;
-  sampleSize: number;
-  qualityPer100Req: number | null;
-  liftVsBaseline: number | null;
-}
+import type { ToolCount, SkillStats } from "@/lib/statsEngine";
 
 interface Props {
   topTools: ToolCount[];

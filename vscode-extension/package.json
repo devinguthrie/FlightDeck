@@ -1,7 +1,7 @@
 {
   "name": "copilot-telemetry-collector",
   "displayName": "FlightDeck Telemetry",
-  "description": "Polls GitHub Copilot quota API and logs snapshots for FlightDeck",
+  "description": "FlightDeck companion extension — polls GitHub Copilot quota API and logs snapshots for the FlightDeck analytics dashboard",
   "version": "1.0.0",
   "publisher": "local",
   "engines": {

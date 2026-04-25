@@ -12,28 +12,13 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-
-interface DailyBucket {
-  date: string;
-  requests: number;
-  sessions: number;
-  toolCalls: number;
-}
-
-interface QuotaDataPoint {
-  timestamp: string;
-  premiumUsed: number;
-}
-
-interface HourlyBucket {
-  hour: string;
-  transcriptTurns: number;
-  toolCalls: number;
-}
+import type { DailyBucket } from "@/lib/statsEngine";
+import type { QuotaDataPoint } from "@/lib/snapshotParser";
+import type { IntradayActivityBucket as HourlyBucket } from "@/lib/transcriptParser";
 
 interface Props {
-  dailyBuckets: DailyBucket[];
-  quotaTimeSeries: QuotaDataPoint[];
+  dailyBuckets: Pick<DailyBucket, "date" | "requests" | "sessions" | "toolCalls">[];
+  quotaTimeSeries: Pick<QuotaDataPoint, "timestamp" | "premiumUsed">[];
   intradayBuckets: HourlyBucket[];
   projectScopedComparison?: boolean;
   hideTitle?: boolean;
@@ -84,7 +69,7 @@ function formatTooltipLabel(ts: string): string {
     d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-function buildPremiumDailyDeltas(timeSeries: QuotaDataPoint[]): Record<string, number> {
+function buildPremiumDailyDeltas(timeSeries: Pick<QuotaDataPoint, "timestamp" | "premiumUsed">[]): Record<string, number> {
   if (timeSeries.length < 2) return {};
 
   const sorted = [...timeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -107,7 +92,7 @@ function buildPremiumDailyDeltas(timeSeries: QuotaDataPoint[]): Record<string, n
   return out;
 }
 
-function buildPremiumHourlyDeltas(timeSeries: QuotaDataPoint[]): Record<string, number> {
+function buildPremiumHourlyDeltas(timeSeries: Pick<QuotaDataPoint, "timestamp" | "premiumUsed">[]): Record<string, number> {
   if (timeSeries.length < 2) return {};
 
   const sorted = [...timeSeries].sort((a, b) => a.timestamp.localeCompare(b.timestamp));

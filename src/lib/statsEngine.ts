@@ -76,6 +76,12 @@ export interface MarginalQualityBucket {
   avgRequests: number;
 }
 
+export interface ProjectionPoint {
+  date: string;
+  actual: number | null;
+  projected: number | null;
+}
+
 export interface StatsResponse {
   // Billing cycle summary
   cycleStart: string;
@@ -102,7 +108,7 @@ export interface StatsResponse {
   // Charts data
   dailyBuckets: DailyBucket[];
   intradayBuckets: IntradayActivityBucket[];
-  projectionPoints: Array<{ date: string; actual: number | null; projected: number | null }>;
+  projectionPoints: ProjectionPoint[];
   topTools: ToolCount[];
   toolLatencies: ToolLatency[];
   skillStats: SkillStats[];

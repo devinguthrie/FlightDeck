@@ -172,32 +172,6 @@ mitmdump --listen-port 8877   # run once to generate CA keys, then Ctrl+C
 
 See [docs/PROXY_SETUP.md](docs/PROXY_SETUP.md) for full setup, troubleshooting, and uninstall instructions.
 
-## Repo Layout
-
-```
-src/
-  app/            Next.js app router, page, API routes
-  components/     Dashboard panels and charts
-  lib/            Parsers, stats engine, DB layer, theme hook
-vscode-extension/ Companion VS Code extension
-docs/             Design notes, metric definitions, screenshots
-scripts/          Proxy management, dev utilities
-```
-
-## API Reference
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/stats` | All aggregated metrics for cards and charts |
-| GET | `/api/sessions` | Parsed session list with pagination |
-| POST | `/api/sessions/[id]/rate` | Persist quality rating for a session |
-| PATCH | `/api/sessions/[id]/active-model` | Update active model for a session |
-| GET | `/api/quota-snapshots` | Quota time series + latest snapshot |
-| POST | `/api/quota-snapshots` | Ingest snapshot from the VS Code extension |
-| GET | `/api/proxy-requests` | CLI request log from MITM proxy |
-| GET | `/api/model-limits` | Model constraints and rate limit events |
-| GET | `/api/config` | Dashboard configuration |
-
 ## Contributing
 
 This is a personal tool built for a specific workflow. PRs for bugs or well-scoped improvements are welcome. Open an issue first for anything larger than a single-panel fix.
@@ -207,7 +181,6 @@ npm test          # run Vitest suite
 npx tsc --noEmit  # type check
 npx eslint .      # lint
 ```
-| GET/PUT | `/api/config` | Local dashboard config (plan, settings) |
 
 ## Local Storage
 
@@ -225,7 +198,7 @@ npx eslint .      # lint
 
 ## Docs
 
-- [docs/DESIGN.md](docs/DESIGN.md)
 - [docs/DATA_POINTS.md](docs/DATA_POINTS.md)
-- [docs/EXTENSION_PLAN.md](docs/EXTENSION_PLAN.md)
 - [docs/MONITORING.md](docs/MONITORING.md)
+- [docs/PROXY_SETUP.md](docs/PROXY_SETUP.md)
+- [docs/MODEL_LIMITS.md](docs/MODEL_LIMITS.md)

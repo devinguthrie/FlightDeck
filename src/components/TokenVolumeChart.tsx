@@ -10,12 +10,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-
-interface DailyBucket {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-}
+import type { DailyBucket } from "@/lib/statsEngine";
 
 interface WorkspaceTokens {
   workspace: string;
@@ -24,7 +19,7 @@ interface WorkspaceTokens {
 }
 
 interface Props {
-  dailyBuckets: DailyBucket[];
+  dailyBuckets: Pick<DailyBucket, "date" | "inputTokens" | "outputTokens">[];
   topWorkspacesByTokens: WorkspaceTokens[];
 }
 

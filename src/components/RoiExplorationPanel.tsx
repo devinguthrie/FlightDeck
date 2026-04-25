@@ -12,37 +12,8 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
-
-interface DailyBucket {
-  date: string;
-  requests: number;
-  sessions: number;
-  skills: string[];
-}
-
-interface QuotaDataPoint {
-  timestamp: string;
-  chatUsed: number;
-  completionsUsed: number;
-  premiumUsed: number;
-}
-
-interface MarginalQualityBucket {
-  bucket: string;
-  sessions: number;
-  avgQuality: number | null;
-  avgRequests: number;
-}
-
-interface SkillStat {
-  name: string;
-  sessions: number;
-  avgRequests: number;
-  avgQuality: number | null;
-  sampleSize: number;
-  qualityPer100Req: number | null;
-  liftVsBaseline: number | null;
-}
+import type { DailyBucket, MarginalQualityBucket, SkillStats } from "@/lib/statsEngine";
+import type { QuotaDataPoint } from "@/lib/snapshotParser";
 
 interface Props {
   dailyBuckets: DailyBucket[];
@@ -64,7 +35,7 @@ interface Props {
   marginalQualityCurve: MarginalQualityBucket[];
   quotaAgeMinutes: number | null;
   totalRated: number;
-  skillStats: SkillStat[];
+  skillStats: SkillStats[];
   hideTitle?: boolean;
   embedded?: boolean;
   showPremiumUsage?: boolean;
