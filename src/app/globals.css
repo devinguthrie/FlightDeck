@@ -1,3 +1,126 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ─── Dark Mode ──────────────────────────────────────────────────────────────
+   html.dark selectors have specificity (0,2,0) which beats Tailwind's (0,1,0),
+   so these overrides apply on top of all component utility classes.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Page backgrounds */
+html.dark body                          { background-color: #0e121b; color: #f3f5f7; }
+html.dark .min-h-screen                 { background-color: #0e121b; }
+
+/* White / gray backgrounds → dark neutral */
+html.dark .bg-white                     { background-color: #1b212a; }
+html.dark .bg-gray-50                   { background-color: #0e121b; }
+html.dark .bg-gray-100                  { background-color: #1f242d; }
+html.dark .bg-gray-200                  { background-color: #2f3640; }
+html.dark .hover\:bg-gray-50:hover      { background-color: #1f242d; }
+html.dark .hover\:bg-gray-100:hover     { background-color: #272c35; }
+html.dark .hover\:bg-gray-200:hover     { background-color: #2f3640; }
+
+/* Text */
+html.dark .text-gray-900                { color: #f3f5f7; }
+html.dark .text-gray-800                { color: #e3e6ec; }
+html.dark .text-gray-700                { color: #d0d5dd; }
+html.dark .text-gray-600                { color: #9ba2b1; }
+html.dark .text-gray-500                { color: #6b7383; }
+html.dark .text-gray-400                { color: #9ba2b1; }
+html.dark .hover\:text-gray-700:hover   { color: #d0d5dd; }
+html.dark .hover\:text-gray-900:hover   { color: #f3f5f7; }
+
+/* Borders */
+html.dark .border-gray-100              { border-color: #21262f; }
+html.dark .border-gray-200              { border-color: #313842; }
+html.dark .border-gray-300              { border-color: #444b55; }
+html.dark .divide-gray-100 > * + *      { border-color: #21262f; }
+html.dark .divide-gray-200 > * + *      { border-color: #313842; }
+
+/* Shadows */
+html.dark .shadow-sm                    { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.45); }
+html.dark .shadow-lg                    { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.55); }
+
+/* Form inputs */
+html.dark input,
+html.dark select,
+html.dark textarea                      { background-color: #0e121b; color: #f3f5f7; border-color: #313842; }
+html.dark input::placeholder            { color: #4d5462; }
+
+/* Blue accent elements */
+html.dark .bg-blue-50                   { background-color: #122141; }
+html.dark .border-blue-200             { border-color: #1d4ed8; }
+html.dark .text-blue-700               { color: #93c5fd; }
+html.dark .text-blue-600               { color: #60a5fa; }
+html.dark .text-blue-800               { color: #bfdbfe; }
+html.dark .bg-blue-100                  { background-color: #1a3166; }
+
+/* Purple accent elements */
+html.dark .bg-purple-50                 { background-color: #1c1938; }
+html.dark .border-purple-200           { border-color: #7c3aed; }
+html.dark .text-purple-700             { color: #c4b5fd; }
+html.dark .text-purple-600             { color: #a78bfa; }
+html.dark .text-purple-800             { color: #ddd6fe; }
+html.dark .bg-purple-100               { background-color: #29174d; }
+
+/* Amber accent elements */
+html.dark .bg-amber-50                  { background-color: #321805; }
+html.dark .border-amber-200            { border-color: #d97706; }
+html.dark .text-amber-700              { color: #fcd34d; }
+html.dark .text-amber-800              { color: #fde68a; }
+html.dark .text-amber-900              { color: #fef3c7; }
+html.dark .bg-amber-100                { background-color: #51290d; }
+html.dark .bg-white\/70                { background-color: rgba(13,17,27,0.7); }
+html.dark .bg-white\/80                { background-color: rgba(13,17,27,0.8); }
+html.dark .border-white\/80            { border-color: rgba(47,54,64,0.8); }
+
+/* Green accent elements */
+html.dark .bg-green-50                  { background-color: #06261d; }
+html.dark .border-green-200            { border-color: #16a34a; }
+html.dark .text-green-700              { color: #86efac; }
+html.dark .text-green-600              { color: #4ade80; }
+html.dark .text-green-800              { color: #bbf7d0; }
+
+/* Red accent elements */
+html.dark .bg-red-50                    { background-color: #310a0a; }
+html.dark .border-red-200              { border-color: #dc2626; }
+html.dark .text-red-700                { color: #fca5a5; }
+html.dark .text-red-500                { color: #f87171; }
+html.dark .text-red-600                { color: #f87171; }
+html.dark .text-red-900                { color: #fecaca; }
+
+/* Indigo accent */
+html.dark .bg-indigo-50                 { background-color: #1c1937; }
+html.dark .border-indigo-200           { border-color: #4f46e5; }
+html.dark .text-indigo-700             { color: #a5b4fc; }
+
+/* Yellow */
+html.dark .text-yellow-400             { color: #fde047; }
+html.dark .text-gray-200               { color: #242a33; }
+
+/* Progress bar track */
+html.dark .bg-white\/60                { background-color: rgba(255,255,255,0.08); }
+
+/* Recharts dark overrides */
+html.dark .recharts-cartesian-grid-horizontal line,
+html.dark .recharts-cartesian-grid-vertical line  { stroke: #2f3640; }
+html.dark .recharts-cartesian-axis-tick-value     { fill: #6b7383 !important; }
+html.dark .recharts-legend-item-text              { color: #9ba2b1 !important; }
+html.dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #1b212a !important;
+  border: 1px solid #313842 !important;
+  border-radius: 8px;
+}
+html.dark .recharts-tooltip-label                 { color: #9ba2b1 !important; }
+html.dark .recharts-tooltip-item                  { color: #e3e6ec !important; }
+
+/* Details/summary (rate limit panel) */
+html.dark details.rounded                         { background-color: #1b212a; }
+
+/* Star ratings */
+html.dark .text-gray-200.text-lg                  { color: #242a33; }
+
+/* Scrollbars */
+html.dark ::-webkit-scrollbar-track               { background: #0e121b; }
+html.dark ::-webkit-scrollbar-thumb               { background: #2f3640; border-radius: 4px; }
+html.dark ::-webkit-scrollbar-thumb:hover         { background: #424953; }

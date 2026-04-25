@@ -297,7 +297,7 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
                     <div className="flex items-center gap-2">
                       <span>{fmtTime(s.endedAt)}</span>
                       {isRecentlyActive(s.endedAt) && (
-                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-green-100 text-green-700 font-medium">
+                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-green-500 text-white font-semibold">
                           active
                         </span>
                       )}

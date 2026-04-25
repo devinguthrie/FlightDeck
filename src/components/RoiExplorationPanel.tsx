@@ -836,7 +836,7 @@ export default function RoiExplorationPanel({
               label={`CLI vs VS Code Usage${selectedWorkspace ? " (account-wide)" : ""}`}
               value={`${proxyTokenAccuracy.cliRequests >= 1000 ? (proxyTokenAccuracy.cliRequests / 1000).toFixed(1) + "k" : proxyTokenAccuracy.cliRequests} CLI · ${proxyTokenAccuracy.vscodeRequests >= 1000 ? (proxyTokenAccuracy.vscodeRequests / 1000).toFixed(1) + "k" : proxyTokenAccuracy.vscodeRequests} VSC`}
               sub={`CLI: ${(proxyTokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k · VSC: ~${(proxyTokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k est.`}
-              color="purple"
+              color="green"
             />
           )}
           <Metric
@@ -874,33 +874,31 @@ export default function RoiExplorationPanel({
         />
       )}
 
-      {/* Best ratio days callout */}
-      {bestDays.length > 0 && (
-        <div className="border border-purple-100 rounded-lg px-4 py-3">
-          <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">
-            Your best efficiency days — what to replicate
-          </p>
-          <div className="space-y-1">
-            {bestDays.map((d) => (
-              <div key={d.date} className="flex items-center gap-3 text-xs text-purple-900">
-                <span className="w-16 shrink-0 font-medium">{d.label}</span>
-                <span className="font-bold text-purple-700">{d.turnsPerPremium?.toFixed(2)}x</span>
-                <span className="text-purple-500">
-                  {d.transcriptTurns} transcript · {d.billedPremium?.toFixed(1)} billed
-                  {d.skills.length > 0 && (
-                    <span className="ml-1 text-purple-400">· {d.skills.join(", ")}</span>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Skill insight cards */}
-      {((skillEfficiencyInsight && skillEfficiencyInsight.length > 0) ||
-        topSkillsByEfficiency.length > 0) && (
+      {/* Best ratio days + skills driving efficiency — same row */}
+      {(bestDays.length > 0 || (skillEfficiencyInsight && skillEfficiencyInsight.length > 0)) && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {bestDays.length > 0 && (
+            <div className="border border-purple-100 rounded-lg px-4 py-3">
+              <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">
+                Your best efficiency days — what to replicate
+              </p>
+              <div className="space-y-1">
+                {bestDays.map((d) => (
+                  <div key={d.date} className="flex items-center gap-3 text-xs text-purple-900">
+                    <span className="w-16 shrink-0 font-medium">{d.label}</span>
+                    <span className="font-bold text-purple-700">{d.turnsPerPremium?.toFixed(2)}x</span>
+                    <span className="text-purple-500">
+                      {d.transcriptTurns} transcript · {d.billedPremium?.toFixed(1)} billed
+                      {d.skills.length > 0 && (
+                        <span className="ml-1 text-purple-400">· {d.skills.join(", ")}</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {skillEfficiencyInsight && skillEfficiencyInsight.length > 0 && (
             <div className="border border-green-100 rounded-lg bg-green-50 px-4 py-3">
               <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2">
@@ -926,28 +924,29 @@ export default function RoiExplorationPanel({
               </p>
             </div>
           )}
+        </div>
+      )}
 
-          {topSkillsByEfficiency.length > 0 && (
-            <div className="border border-blue-100 rounded-lg bg-blue-50 px-4 py-3">
-              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">
-                Best quality per request (rated sessions)
-              </p>
-              <div className="space-y-1">
-                {topSkillsByEfficiency.map((s) => (
-                  <div key={s.name} className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-blue-900">{s.name}</span>
-                    <span className="text-blue-600">
-                      {s.qualityPer100Req?.toFixed(1)} q/100req
-                      <span className="text-blue-400 ml-1">({s.sampleSize} rated)</span>
-                    </span>
-                  </div>
-                ))}
+      {/* Best quality per request — standalone row */}
+      {topSkillsByEfficiency.length > 0 && (
+        <div className="border border-blue-100 rounded-lg bg-blue-50 px-4 py-3">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">
+            Best quality per request (rated sessions)
+          </p>
+          <div className="space-y-1">
+            {topSkillsByEfficiency.map((s) => (
+              <div key={s.name} className="flex items-center justify-between text-xs">
+                <span className="font-medium text-blue-900">{s.name}</span>
+                <span className="text-blue-600">
+                  {s.qualityPer100Req?.toFixed(1)} q/100req
+                  <span className="text-blue-400 ml-1">({s.sampleSize} rated)</span>
+                </span>
               </div>
-              <p className="text-[11px] text-blue-500 mt-2">
-                Most output quality per premium request.
-              </p>
-            </div>
-          )}
+            ))}
+          </div>
+          <p className="text-[11px] text-blue-500 mt-2">
+            Most output quality per premium request.
+          </p>
         </div>
       )}
     </div>
@@ -970,7 +969,7 @@ function Metric({
   sub: string;
   highlight?: boolean;
   trend?: number | null;
-  color?: "blue" | "purple";
+  color?: "blue" | "purple" | "green";
   progress?: number;
 }) {
   const trendColor =
@@ -984,20 +983,25 @@ function Metric({
 
   const isBlue = color === "blue";
   const isPurple = color === "purple" || highlight;
+  const isGreen = color === "green";
 
   const containerCls = isBlue
     ? "border-blue-200 bg-blue-50"
     : isPurple
     ? "border-purple-200 bg-purple-50"
+    : isGreen
+    ? "border-green-200 bg-green-50"
     : "border-gray-200 bg-gray-50";
 
   const valueCls = isBlue
     ? "text-blue-700"
     : isPurple
     ? "text-purple-700"
+    : isGreen
+    ? "text-green-700"
     : "text-gray-900";
 
-  const barCls = isBlue ? "bg-blue-400" : isPurple ? "bg-purple-400" : "bg-gray-400";
+  const barCls = isBlue ? "bg-blue-400" : isPurple ? "bg-purple-400" : isGreen ? "bg-green-400" : "bg-gray-400";
 
   return (
     <div className={`rounded-lg border px-2.5 py-2 ${containerCls}`}>
