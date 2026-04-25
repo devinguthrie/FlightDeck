@@ -783,70 +783,10 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-        <CollapsibleSection
-          title="KPIs"
-          description="Current billing-cycle health, immediate risk, and the quickest quality signals."
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            <KpiCard
-              label={quota?.available ? "Premium Used This Cycle" : "Transcript Turns This Cycle"}
-              value={`${effectiveUsed.toFixed(1)} / ${effectiveQuota}`}
-              sub={`${(effectiveUsagePct * 100).toFixed(2)}% of quota used${quota?.available ? " (billed)" : " (estimated)"}${selectedWorkspace ? " · account-wide, not project-scoped" : ""}`}
-              color="blue"
-              progress={effectiveUsagePct}
-            />
-
-            {contextualAlert && (
-              <KpiCard
-                label={contextualAlert.title}
-                value={contextualAlert.value}
-                sub={contextualAlert.description}
-                color={contextualAlert.tone}
-              />
-            )}
-
-            <KpiCard
-              label="Sessions / Avg Quality"
-              value={`${stats.totalSessions}`}
-              sub={
-                stats.avgQuality !== null
-                  ? `Avg quality: ${stats.avgQuality}/5 (${stats.totalRated} rated)`
-                  : `${stats.totalRated} rated — start rating sessions below`
-              }
-              color="purple"
-            />
-            <KpiCard
-              label="Est. Transcript Context"
-              value={
-                stats.avgContextSaturation !== null
-                  ? `${(stats.avgContextSaturation * 100).toFixed(1)}%`
-                  : "No data"
-              }
-              sub="Transcript-only estimate of 128k context usage; system prompts and file context are missing, so this undercounts true context"
-              color="amber"
-              progress={stats.avgContextSaturation ?? undefined}
-            />
-            {stats.proxyStats.tokenAccuracy && (
-              <KpiCard
-                label={`CLI vs VS Code Usage${selectedWorkspace ? " (account-wide)" : ""}`}
-                value={`${stats.proxyStats.cliRequests} CLI · ${Math.max(0, stats.totalRequests - stats.proxyStats.cliRequests)} VS Code`}
-                sub={`CLI: ${(stats.proxyStats.tokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k tokens exact · VS Code: ~${(stats.proxyStats.tokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k tokens estimated (transcript heuristic — system prompts & file context not captured, likely undercounted) · ${stats.totalRequests} total requests`}
-                color="purple"
-              />
-            )}
-            {stats.outputInputRatio !== null && (
-              <KpiCard
-                label={`Output / Input Ratio (CLI)${selectedWorkspace ? " (account-wide)" : ""}`}
-                value={`${stats.outputInputRatio}×`}
-                sub={`Completion tokens per prompt token from MITM proxy · ${fmtTokens(stats.proxyStats.modelBreakdown.reduce((s, m) => s + m.totalCompletionTokens, 0))} completion ÷ ${fmtTokens(stats.proxyStats.modelBreakdown.reduce((s, m) => s + m.totalPromptTokens, 0))} prompt`}
-                color="green"
-              />
-            )}
-          </div>
-        </CollapsibleSection>
+        
 
         <div className="space-y-4">
-          <CollapsibleModule title="Premium Calls & ROI">
+          <CollapsibleModule title="Premium Insights">
             <RoiExplorationPanel
               embedded
               hideTitle
@@ -871,6 +811,21 @@ export default function Dashboard() {
               quotaAgeMinutes={quota?.ageMinutes ?? null}
               totalRated={stats.totalRated}
               skillStats={stats.skillStats}
+              effectiveUsed={effectiveUsed}
+              effectiveQuota={effectiveQuota}
+              quotaAvailable={quota?.available ?? false}
+              selectedWorkspace={selectedWorkspace}
+              proxyTokenAccuracy={
+                stats.proxyStats.tokenAccuracy
+                  ? {
+                      cliRequests: stats.proxyStats.cliRequests,
+                      vscodeRequests: Math.max(0, stats.totalRequests - stats.proxyStats.cliRequests),
+                      exactTotalTokens: stats.proxyStats.tokenAccuracy.exactTotalTokens,
+                      estimatedTotalTokens: stats.proxyStats.tokenAccuracy.estimatedTotalTokens,
+                      totalRequests: stats.totalRequests,
+                    }
+                  : null
+              }
             />
           </CollapsibleModule>
 
@@ -923,7 +878,7 @@ export default function Dashboard() {
             />
           </CollapsibleModule>
 
-          <CollapsibleModule title="Skill Impact">
+          <CollapsibleModule title="Skill and Tool Impact">
             <ToolBreakdown topTools={stats.topTools} skillStats={stats.skillStats} totalRated={stats.totalRated} />
           </CollapsibleModule>
 

@@ -68,6 +68,19 @@ interface Props {
   hideTitle?: boolean;
   embedded?: boolean;
   showPremiumUsage?: boolean;
+  // Premium Used This Cycle
+  effectiveUsed?: number;
+  effectiveQuota?: number;
+  quotaAvailable?: boolean;
+  selectedWorkspace?: string | null;
+  // CLI vs VS Code Usage
+  proxyTokenAccuracy?: {
+    cliRequests: number;
+    vscodeRequests: number;
+    exactTotalTokens: number;
+    estimatedTotalTokens: number;
+    totalRequests: number;
+  } | null;
 }
 
 interface PremiumUsagePanelProps {
@@ -428,6 +441,24 @@ export function PremiumUsagePanel({
     return { todayTurns, todayPremiumDelta, todayRatio };
   }, [dailyBuckets, intradayBuckets, intradaySnapshots]);
 
+  const windowTranscriptTurns = useMemo(() => {
+    const rangeStart = toRangeStart(range, quotaResetDate);
+    const startMs = rangeStart ? rangeStart.getTime() : 0;
+    return intradayBuckets
+      .filter((b) => new Date(b.hour).getTime() >= startMs)
+      .reduce((sum, b) => sum + b.transcriptTurns, 0);
+  }, [range, quotaResetDate, intradayBuckets]);
+
+  const windowRatio =
+    windowTranscriptTurns > 0 && windowPremiumBurn !== null && windowPremiumBurn > 0
+      ? windowTranscriptTurns / windowPremiumBurn
+      : null;
+
+  const rangeShortLabel: string =
+    range === "cycle" ? "cycle" :
+    range === "all" ? "all time" :
+    range;
+
   return (
     <div className={`${embedded ? "bg-white p-5 space-y-4" : "rounded-lg bg-white border border-gray-200 p-5 space-y-4"}`}>
       {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Premium Usage</h2>}
@@ -450,39 +481,78 @@ export function PremiumUsagePanel({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-[120px_repeat(3,minmax(0,1fr))]">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs min-w-[120px]">
-          <div className="font-medium mb-0.5 text-blue-700">Premium</div>
-          <div className="tabular-nums text-blue-700">
-            {latestBilledPremium !== null && premiumEntitlement !== null
-              ? `${latestBilledPremium.toFixed(1)} / ${premiumEntitlement} `
-              : "— "}
-            {premiumUsagePct !== null && <span className="opacity-60">({premiumUsagePct}%)</span>}
-          </div>
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/60">
-            <div
-              className="h-full rounded-full bg-blue-400"
-              style={{ width: `${Math.min(100, premiumUsagePct ?? 0)}%` }}
-            />
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-3">
+        
         <div className="rounded border border-gray-100 px-2.5 py-2 bg-white min-w-0">
-          <p className="text-[11px] text-gray-500">Transcript turns today</p>
+          <p className="text-[11px] text-gray-500">Transcript turns ({rangeShortLabel})</p>
           <p className="font-semibold text-gray-800 truncate">
-            {todayStats.todayTurns !== null ? todayStats.todayTurns.toLocaleString() : "—"}
+            {windowTranscriptTurns > 0 ? windowTranscriptTurns.toLocaleString() : "—"}
           </p>
         </div>
         <div className="rounded border border-gray-100 px-2.5 py-2 bg-white min-w-0">
-          <p className="text-[11px] text-gray-500">Premium burned ({range})</p>
+          <p className="text-[11px] text-gray-500">Premium burned ({rangeShortLabel})</p>
           <p className="font-semibold text-gray-800 truncate">
             {windowPremiumBurn !== null ? windowPremiumBurn.toFixed(2) : "—"}
           </p>
         </div>
         <div className="rounded border border-purple-100 px-2.5 py-2 bg-purple-50 min-w-0">
-          <p className="text-[11px] text-purple-600">Turns / Premium today</p>
+          <p className="text-[11px] text-purple-600">Turns / Premium ({rangeShortLabel})</p>
           <p className="font-semibold text-purple-800 truncate">
-            {todayStats.todayRatio !== null ? `${todayStats.todayRatio.toFixed(1)}×` : "—"}
+            {windowRatio !== null ? `${windowRatio.toFixed(1)}×` : "—"}
           </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">View</span>
+          <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
+            {([
+              ["raw", "Raw"],
+              ["hourly", "Hourly"],
+              ["daily", "Daily"],
+            ] as Array<[GranularityKey, string]>).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGranularity(key)}
+                className={`px-2.5 py-1 text-xs rounded ${
+                  granularity === key
+                    ? "bg-white border border-gray-300 text-gray-800"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">Range</span>
+          <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
+            {([
+              ["3h", "3h"],
+              ["12h", "12h"],
+              ["24h", "24h"],
+              ["7d", "7d"],
+              ["30d", "30d"],
+              ["cycle", "Cycle"],
+              ["all", "All"],
+            ] as Array<[RangeKey, string]>).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRange(key)}
+                className={`px-2.5 py-1 text-xs rounded ${
+                  range === key
+                    ? "bg-white border border-gray-300 text-gray-800"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -595,59 +665,6 @@ export function PremiumUsagePanel({
       <p className="text-[11px] text-gray-400">
         Blue = cumulative premium used · amber dashed = burn per interval.
       </p>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wide text-gray-400">Range</span>
-          <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
-            {([
-              ["3h", "3h"],
-              ["12h", "12h"],
-              ["24h", "24h"],
-              ["7d", "7d"],
-              ["30d", "30d"],
-              ["cycle", "Cycle"],
-              ["all", "All"],
-            ] as Array<[RangeKey, string]>).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setRange(key)}
-                className={`px-2.5 py-1 text-xs rounded ${
-                  range === key
-                    ? "bg-white border border-gray-300 text-gray-800"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wide text-gray-400">View</span>
-          <div className="flex items-center gap-1 rounded-md bg-gray-100 p-1">
-            {([
-              ["raw", "Raw"],
-              ["hourly", "Hourly"],
-              ["daily", "Daily"],
-            ] as Array<[GranularityKey, string]>).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setGranularity(key)}
-                className={`px-2.5 py-1 text-xs rounded ${
-                  granularity === key
-                    ? "bg-white border border-gray-300 text-gray-800"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -678,6 +695,11 @@ export default function RoiExplorationPanel({
   hideTitle = false,
   embedded = false,
   showPremiumUsage = true,
+  effectiveUsed,
+  effectiveQuota,
+  quotaAvailable,
+  selectedWorkspace,
+  proxyTokenAccuracy,
 }: Props) {
   const hasQualitySignal = totalRated >= 5;
   const trustScore = trustScoreFromAge(quotaAgeMinutes);
@@ -800,6 +822,23 @@ export default function RoiExplorationPanel({
       <div>
         <p className="px-1 pb-1.5 text-[11px] font-medium text-gray-500 uppercase tracking-wide">Key metrics</p>
         <div className="grid grid-cols-2 min-[900px]:grid-cols-4 gap-2.5">
+          {effectiveUsed !== undefined && effectiveQuota !== undefined && (
+            <Metric
+              label={quotaAvailable ? "Premium Used This Cycle" : "Transcript Turns This Cycle"}
+              value={`${effectiveUsed.toFixed(1)} / ${effectiveQuota}`}
+              sub={`${effectiveQuota > 0 ? ((effectiveUsed / effectiveQuota) * 100).toFixed(2) : "0.00"}% of quota used${quotaAvailable ? " (billed)" : " (estimated)"}${selectedWorkspace ? " · account-wide" : ""}`}
+              color="blue"
+              progress={effectiveQuota > 0 ? effectiveUsed / effectiveQuota : 0}
+            />
+          )}
+          {proxyTokenAccuracy != null && (
+            <Metric
+              label={`CLI vs VS Code Usage${selectedWorkspace ? " (account-wide)" : ""}`}
+              value={`${proxyTokenAccuracy.cliRequests >= 1000 ? (proxyTokenAccuracy.cliRequests / 1000).toFixed(1) + "k" : proxyTokenAccuracy.cliRequests} CLI · ${proxyTokenAccuracy.vscodeRequests >= 1000 ? (proxyTokenAccuracy.vscodeRequests / 1000).toFixed(1) + "k" : proxyTokenAccuracy.vscodeRequests} VSC`}
+              sub={`CLI: ${(proxyTokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k · VSC: ~${(proxyTokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k est.`}
+              color="purple"
+            />
+          )}
           <Metric
             label="Turns / Premium (Cycle)"
             value={cycleTurnsPerPremium !== null ? cycleTurnsPerPremium.toFixed(2) : "-"}
@@ -816,43 +855,10 @@ export default function RoiExplorationPanel({
             }
             trend={trendPct}
           />
-          <Metric
-            label="Transcript Turns (Cycle)"
-            value={cycleAssistantTurns.toLocaleString()}
-            sub="assistant.turn_start count"
-          />
-          <Metric
-            label="Billed Premium (Cycle)"
-            value={latestBilledPremium !== null ? latestBilledPremium.toFixed(1) : "-"}
-            sub="GitHub quota snapshot cumulative"
-          />
+
         </div>
       </div>
-      <div>
-        <p className="px-1 pb-1.5 text-[11px] font-medium text-gray-500 uppercase tracking-wide">Cost &amp; efficiency signals</p>
-        <div className="grid grid-cols-2 min-[900px]:grid-cols-4 gap-2.5">
-          <Metric
-            label="Premium / User Prompt"
-            value={premiumBurnPerUserPrompt !== null ? premiumBurnPerUserPrompt.toFixed(3) : "-"}
-            sub="billed premium per user turn"
-          />
-          <Metric
-            label="Work Depth per Turn"
-            value={toolOverheadRatio.toFixed(3)}
-            sub="tool calls per assistant turn"
-          />
-          <Metric
-            label="Prompt Efficiency"
-            value={hasQualitySignal && promptEfficiencyPer100Turns !== null ? promptEfficiencyPer100Turns.toFixed(2) : "-"}
-            sub={hasQualitySignal ? "quality pts per 100 user turns" : "needs 5+ rated sessions"}
-          />
-          <Metric
-            label="Quota Trust"
-            value={`${trustScore}%`}
-            sub={quotaAgeMinutes !== null ? `snapshot age ${quotaAgeMinutes}m` : "no live quota snapshot"}
-          />
-        </div>
-      </div>
+      
       {showPremiumUsage && (
         <PremiumUsagePanel
           embedded
@@ -956,12 +962,16 @@ function Metric({
   sub,
   highlight,
   trend,
+  color,
+  progress,
 }: {
   label: string;
   value: string;
   sub: string;
   highlight?: boolean;
   trend?: number | null;
+  color?: "blue" | "purple";
+  progress?: number;
 }) {
   const trendColor =
     trend == null
@@ -972,23 +982,40 @@ function Metric({
       ? "text-red-500"
       : "text-gray-500";
 
+  const isBlue = color === "blue";
+  const isPurple = color === "purple" || highlight;
+
+  const containerCls = isBlue
+    ? "border-blue-200 bg-blue-50"
+    : isPurple
+    ? "border-purple-200 bg-purple-50"
+    : "border-gray-200 bg-gray-50";
+
+  const valueCls = isBlue
+    ? "text-blue-700"
+    : isPurple
+    ? "text-purple-700"
+    : "text-gray-900";
+
+  const barCls = isBlue ? "bg-blue-400" : isPurple ? "bg-purple-400" : "bg-gray-400";
+
   return (
-    <div
-      className={`rounded-lg border px-2.5 py-2 ${
-        highlight ? "border-purple-200 bg-purple-50" : "border-gray-200 bg-gray-50"
-      }`}
-    >
+    <div className={`rounded-lg border px-2.5 py-2 ${containerCls}`}>
       <p className="text-[10px] uppercase tracking-wide text-gray-500">{label}</p>
-      <p
-        className={`mt-1 text-base font-semibold leading-none md:text-lg ${
-          highlight ? "text-purple-700" : "text-gray-900"
-        }`}
-      >
+      <p className={`mt-1 text-base font-semibold leading-none md:text-lg ${valueCls}`}>
         {value}
       </p>
       <p className={`mt-1 text-[10px] leading-tight ${trend != null ? trendColor : "text-gray-500"}`}>
         {sub}
       </p>
+      {progress !== undefined && (
+        <div className="mt-2 h-1 bg-white/60 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${barCls}`}
+            style={{ width: `${Math.min(100, progress * 100)}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

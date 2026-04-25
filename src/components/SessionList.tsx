@@ -30,8 +30,8 @@ interface Props {
   hideTitle?: boolean;
   embedded?: boolean;
 }
-const SESSION_PAGE_SIZE = 25;
-const SESSION_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const SESSION_PAGE_SIZE = 5;
+const SESSION_PAGE_SIZE_OPTIONS = [5, 10, 25, 50, 100];
 
 function StarRating({
   value,

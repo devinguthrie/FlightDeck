@@ -133,21 +133,38 @@ export function ModelLimitsPanel({ hideTitle = false, embedded = false }: { hide
                 <div className="border-t border-amber-200 px-3 py-2">
                   <p className="mb-2 text-[11px] uppercase tracking-wide text-amber-700">Occurrences</p>
                   <div className="space-y-2">
-                    {error.occurrences.map((occurrence, index) => (
-                      <div
-                        key={`${error.model}-${error.errorCode}-${occurrence.ts}-${index}`}
-                        className="rounded border border-white/80 bg-white/70 px-3 py-2 text-xs text-gray-600"
-                      >
-                        <div className="font-medium text-gray-700">{new Date(occurrence.ts).toLocaleString()}</div>
-                        {(occurrence.rateLimitRemaining !== null || occurrence.rateLimitReset) && (
-                          <div className="mt-1">
-                            {occurrence.rateLimitRemaining !== null && `Remaining: ${occurrence.rateLimitRemaining}`}
-                            {occurrence.rateLimitRemaining !== null && occurrence.rateLimitReset && " • "}
-                            {occurrence.rateLimitReset && `Reset: ${new Date(occurrence.rateLimitReset).toLocaleTimeString()}`}
+                    {error.occurrences
+                      .reduce<Array<{ ts: string; count: number; rateLimitRemaining: number | null; rateLimitReset: string | null }>>(
+                        (acc, occ) => {
+                          const existing = acc.find((g) => g.ts === occ.ts);
+                          if (existing) { existing.count += 1; }
+                          else { acc.push({ ts: occ.ts, count: 1, rateLimitRemaining: occ.rateLimitRemaining, rateLimitReset: occ.rateLimitReset }); }
+                          return acc;
+                        },
+                        [],
+                      )
+                      .map((occurrence) => (
+                        <div
+                          key={`${error.model}-${error.errorCode}-${occurrence.ts}`}
+                          className="rounded border border-white/80 bg-white/70 px-3 py-2 text-xs text-gray-600"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-700">{new Date(occurrence.ts).toLocaleString()}</span>
+                            {occurrence.count > 1 && (
+                              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                ×{occurrence.count}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {(occurrence.rateLimitRemaining !== null || occurrence.rateLimitReset) && (
+                            <div className="mt-1">
+                              {occurrence.rateLimitRemaining !== null && `Remaining: ${occurrence.rateLimitRemaining}`}
+                              {occurrence.rateLimitRemaining !== null && occurrence.rateLimitReset && " • "}
+                              {occurrence.rateLimitReset && `Reset: ${new Date(occurrence.rateLimitReset).toLocaleTimeString()}`}
+                            </div>
+                          )}
+                        </div>
+                      ))}
                   </div>
                 </div>
               </details>
