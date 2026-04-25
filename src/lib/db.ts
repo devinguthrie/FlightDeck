@@ -256,9 +256,24 @@ function migrateQuotaSnapshotColumns(db: Database.Database): void {
 }
 
 function migrateRatingsFromJson(db: Database.Database): void {
-  const { n } = db.prepare("SELECT COUNT(*) as n FROM ratings").get() as { n: number };
-  if (n > 0) return; // already migrated (or user has rated sessions via new path)
-  if (!existsSync(LEGACY_DATA_JSON)) return;
+  // Use a sentinel row rather than rating count — a user who rated one session
+  // via the new UI before this migration ran would otherwise permanently skip it.
+  const MIGRATION_KEY = "migration:ratings_v1";
+  const alreadyDone = db
+    .prepare("SELECT file_path FROM ingested_files WHERE file_path = ?")
+    .get(MIGRATION_KEY);
+  if (alreadyDone) return;
+
+  const markDone = () => {
+    db.prepare(
+      "INSERT OR IGNORE INTO ingested_files (file_path, mtime, parsed) VALUES (?, 0, 1)"
+    ).run(MIGRATION_KEY);
+  };
+
+  if (!existsSync(LEGACY_DATA_JSON)) {
+    markDone();
+    return;
+  }
 
   try {
     const raw = JSON.parse(readFileSync(LEGACY_DATA_JSON, "utf-8")) as {
@@ -285,6 +300,7 @@ function migrateRatingsFromJson(db: Database.Database): void {
       }
     });
     tx();
+    markDone();
   } catch {
     // Non-fatal — skip if data.json is malformed
   }
@@ -349,15 +365,43 @@ function syncSessions(): void {
   const upsertFile = db.prepare(
     "INSERT OR REPLACE INTO ingested_files (file_path, mtime, parsed) VALUES (?, ?, ?)"
   );
+  // UPSERT: on conflict, preserve active_model/used_models if the incoming
+  // transcript parse produced null/empty — the API may have set these already.
   const upsertSession = db.prepare(
-    `INSERT OR REPLACE INTO sessions
+    `INSERT INTO sessions
        (session_id, workspace_hash, workspace_name, started_at, ended_at,
         duration_minutes, active_minutes, user_turns, assistant_turns, tool_calls_total,
         tool_calls_by_name, skills_activated,
         estimated_input_tokens, estimated_output_tokens, estimated_total_tokens,
         premium_requests, raw_path, copilot_version, vs_code_version,
         tool_latency_ms, context_saturation, active_model, used_models)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        workspace_hash          = excluded.workspace_hash,
+        workspace_name          = excluded.workspace_name,
+        started_at              = excluded.started_at,
+        ended_at                = excluded.ended_at,
+        duration_minutes        = excluded.duration_minutes,
+        active_minutes          = excluded.active_minutes,
+        user_turns              = excluded.user_turns,
+        assistant_turns         = excluded.assistant_turns,
+        tool_calls_total        = excluded.tool_calls_total,
+        tool_calls_by_name      = excluded.tool_calls_by_name,
+        skills_activated        = excluded.skills_activated,
+        estimated_input_tokens  = excluded.estimated_input_tokens,
+        estimated_output_tokens = excluded.estimated_output_tokens,
+        estimated_total_tokens  = excluded.estimated_total_tokens,
+        premium_requests        = excluded.premium_requests,
+        raw_path                = excluded.raw_path,
+        copilot_version         = excluded.copilot_version,
+        vs_code_version         = excluded.vs_code_version,
+        tool_latency_ms         = excluded.tool_latency_ms,
+        context_saturation      = excluded.context_saturation,
+        active_model            = COALESCE(excluded.active_model, sessions.active_model),
+        used_models             = CASE
+          WHEN json_array_length(excluded.used_models) > 0 THEN excluded.used_models
+          ELSE sessions.used_models
+        END`
   );
 
   const sync = db.transaction(() => {

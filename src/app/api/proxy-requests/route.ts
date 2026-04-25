@@ -62,16 +62,16 @@ export async function POST(req: NextRequest) {
     recordProxyRequestWithRateLimit(
       ts,
       model,
-      promptTokens || null,
-      completionTokens || null,
-      totalTokens || null,
-      latencyMs || 0,
-      source || "unknown",
-      rateLimitLimit || null,
-      rateLimitRemaining || null,
-      rateLimitResetAt || null,
-      errorCode || null,
-      errorMessage || null
+      promptTokens ?? null,
+      completionTokens ?? null,
+      totalTokens ?? null,
+      latencyMs ?? 0,
+      source ?? "unknown",
+      rateLimitLimit ?? null,
+      rateLimitRemaining ?? null,
+      rateLimitResetAt ?? null,
+      errorCode ?? null,
+      errorMessage ?? null
     );
 
     return NextResponse.json(
@@ -80,8 +80,8 @@ export async function POST(req: NextRequest) {
         recorded: {
           ts,
           model,
-          errorCode: errorCode || null,
-          rateLimitRemaining: rateLimitRemaining || null,
+          errorCode: errorCode ?? null,
+          rateLimitRemaining: rateLimitRemaining ?? null,
         },
       },
       { status: 201 }

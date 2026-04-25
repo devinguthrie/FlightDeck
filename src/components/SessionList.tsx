@@ -80,15 +80,19 @@ function RatingCell({
     if (quality === 0) return;
     setSaving(true);
     try {
-      await fetch(`/api/sessions/${session.sessionId}/rate`, {
+      const res = await fetch(`/api/sessions/${session.sessionId}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quality, taskCompleted, note }),
       });
+      if (!res.ok) {
+        console.error("Failed to save rating:", res.status);
+        return;
+      }
       onRated();
+      setOpen(false);
     } finally {
       setSaving(false);
-      setOpen(false);
     }
   }
 
@@ -346,7 +350,7 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
                     {s.workspaceName}
                   </td>
                   <td className="py-2.5 text-xs">
-                    <SessionModelBadge sessionId={s.sessionId} />
+                    <SessionModelBadge sessionId={s.sessionId} endedAt={s.endedAt} />
                   </td>
                   <td className="py-2.5 text-right font-semibold text-blue-600">
                     {s.premiumRequests}
@@ -373,8 +377,8 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
                   </td>
                   <td className="py-2.5">
                     <div className="flex flex-wrap gap-1 max-w-[180px]">
-                      {sessionFlags(s).length > 0 ? (
-                        sessionFlags(s).map((flag) => (
+                      {(() => { const flags = sessionFlags(s); return flags.length > 0 ? (
+                        flags.map((flag) => (
                           <span
                             key={flag}
                             className={`px-1.5 py-0.5 text-[10px] rounded font-medium ${
@@ -390,7 +394,7 @@ export default function SessionList({ sessions, onRated, hideTitle = false, embe
                         ))
                       ) : (
                         <span className="text-[11px] text-gray-300">-</span>
-                      )}
+                      ); })()}
                     </div>
                   </td>
                   <td className="py-2.5">

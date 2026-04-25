@@ -24,29 +24,34 @@ export async function POST(
     }
 
     const db = getDb();
-    
-    // Get current usedModels array
-    const session = db
-      .prepare("SELECT used_models FROM sessions WHERE session_id = ?")
-      .get(sessionId) as { used_models: string } | undefined;
 
-    if (!session) {
+    // Wrap read-modify-write in a transaction to prevent concurrent POSTs
+    // from racing and silently dropping model entries.
+    const mergedUsedModels = db.transaction(() => {
+      const session = db
+        .prepare("SELECT used_models FROM sessions WHERE session_id = ?")
+        .get(sessionId) as { used_models: string } | undefined;
+
+      if (!session) return null;
+
+      const currentUsedModels = JSON.parse(session.used_models || "[]") as string[];
+      const merged = Array.from(
+        new Set([...currentUsedModels, activeModel, ...(Array.isArray(usedModels) ? usedModels : [])])
+      );
+
+      db.prepare(
+        "UPDATE sessions SET active_model = ?, used_models = ? WHERE session_id = ?"
+      ).run(activeModel, JSON.stringify(merged), sessionId);
+
+      return merged;
+    })();
+
+    if (mergedUsedModels === null) {
       return NextResponse.json(
         { error: "Session not found" },
         { status: 404 }
       );
     }
-
-    // Merge new model into used models (avoid duplicates)
-    const currentUsedModels = JSON.parse(session.used_models || "[]") as string[];
-    const mergedUsedModels = Array.from(
-      new Set([...currentUsedModels, activeModel, ...(usedModels || [])])
-    );
-
-    // Update session
-    db.prepare(
-      "UPDATE sessions SET active_model = ?, used_models = ? WHERE session_id = ?"
-    ).run(activeModel, JSON.stringify(mergedUsedModels), sessionId);
 
     return NextResponse.json(
       {
@@ -95,18 +100,24 @@ export async function GET(
     if (needsBackfill) {
       const fallbackModelInfo = findSessionModelInfo(sessionId);
       if (fallbackModelInfo) {
+        // Use WHERE active_model IS NULL so concurrent GETs don't race — only
+        // the first writer succeeds; subsequent writes are no-ops.
         db.prepare(
-          "UPDATE sessions SET active_model = ?, used_models = ? WHERE session_id = ?"
+          "UPDATE sessions SET active_model = ?, used_models = ? WHERE session_id = ? AND active_model IS NULL"
         ).run(
           fallbackModelInfo.activeModel,
           JSON.stringify(fallbackModelInfo.usedModels),
           sessionId
         );
 
+        const updated = db
+          .prepare("SELECT active_model, used_models FROM sessions WHERE session_id = ?")
+          .get(sessionId) as { active_model: string | null; used_models: string } | undefined;
+
         return NextResponse.json({
           sessionId,
-          activeModel: fallbackModelInfo.activeModel,
-          usedModels: fallbackModelInfo.usedModels,
+          activeModel: updated?.active_model ?? fallbackModelInfo.activeModel,
+          usedModels: JSON.parse(updated?.used_models ?? "[]") as string[],
         });
       }
     }

@@ -10,13 +10,15 @@ interface SessionModelInfo {
 
 /**
  * Displays the active model and all models used during a session.
- * Updates in real-time as models are discovered.
+ * Polls every 5 seconds only for sessions active within the last 15 minutes.
  */
-export function SessionModelBadge({ sessionId }: { sessionId: string }) {
+export function SessionModelBadge({ sessionId, endedAt }: { sessionId: string; endedAt: string }) {
   const [modelInfo, setModelInfo] = useState<SessionModelInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const isActive = Date.now() - new Date(endedAt).getTime() < 15 * 60 * 1000;
+
     const fetchModelInfo = async () => {
       try {
         const res = await fetch(`/api/sessions/${sessionId}/active-model`);
@@ -32,10 +34,10 @@ export function SessionModelBadge({ sessionId }: { sessionId: string }) {
     };
 
     fetchModelInfo();
-    // Poll every 5 seconds during active sessions
+    if (!isActive) return;
     const interval = setInterval(fetchModelInfo, 5000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, endedAt]);
 
   if (loading || !modelInfo) {
     return null;
@@ -54,9 +56,9 @@ export function SessionModelBadge({ sessionId }: { sessionId: string }) {
         </div>
       )}
       {modelInfo.usedModels.length > 1 && (
-        <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded-full text-xs text-gray-600">
+        <div className="group relative inline-flex items-center gap-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded-full text-xs text-gray-600">
           <span className="font-medium">{modelInfo.usedModels.length} models</span>
-          <div className="hidden group-hover:block absolute bg-white border rounded-lg p-2 shadow-lg z-10">
+          <div className="hidden group-hover:block absolute top-full left-0 mt-1 bg-white border rounded-lg p-2 shadow-lg z-10 min-w-max">
             {modelInfo.usedModels.map((model) => (
               <div key={model} className="text-xs font-mono text-gray-700">
                 {model}
