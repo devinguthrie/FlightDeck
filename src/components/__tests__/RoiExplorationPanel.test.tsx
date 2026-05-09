@@ -66,9 +66,8 @@ describe("RoiExplorationPanel live stats", () => {
       />
     );
 
-    expect(screen.getByText("Premium")).toBeInTheDocument();
-    expect(screen.getByText(/112.0 \/ 300/)).toBeInTheDocument();
-    expect(screen.getByText("Transcript turns today")).toBeInTheDocument();
+    expect(screen.getByText("Turns / Premium (7d)")).toBeInTheDocument();
+    expect(screen.getByText("Transcript turns (7d)")).toBeInTheDocument();
     expect(screen.getByText("100")).toBeInTheDocument();
     expect(screen.getByText("12.00")).toBeInTheDocument();
     expect(screen.getByText("8.3×")).toBeInTheDocument();

@@ -722,7 +722,7 @@ export default function Dashboard() {
               hideTitle
               showPremiumUsage={false}
               dailyBuckets={stats.dailyBuckets}
-              quotaTimeSeries={quota?.timeSeries ?? []}
+              quotaTimeSeries={postResetTimeSeries}
               chatEntitlement={quota?.chatEntitlement ?? null}
               completionsEntitlement={quota?.completionsEntitlement ?? null}
               premiumEntitlement={quota?.premiumEntitlement ?? null}
@@ -746,13 +746,13 @@ export default function Dashboard() {
               quotaAvailable={quota?.available ?? false}
               selectedWorkspace={selectedWorkspace}
               proxyTokenAccuracy={
-                stats.proxyStats.tokenAccuracy
+                stats.proxyStats.cliRequests > 0 || stats.proxyStats.vscodeRequests > 0
                   ? {
                       cliRequests: stats.proxyStats.cliRequests,
-                      vscodeRequests: Math.max(0, stats.totalRequests - stats.proxyStats.cliRequests),
-                      exactTotalTokens: stats.proxyStats.tokenAccuracy.exactTotalTokens,
-                      estimatedTotalTokens: stats.proxyStats.tokenAccuracy.estimatedTotalTokens,
-                      totalRequests: stats.totalRequests,
+                      vscodeRequests: stats.proxyStats.vscodeRequests,
+                      exactTotalTokens: stats.proxyStats.tokenAccuracy?.exactTotalTokens ?? null,
+                      estimatedTotalTokens: stats.proxyStats.tokenAccuracy?.estimatedTotalTokens ?? null,
+                      totalRequests: stats.proxyStats.totalRequests,
                     }
                   : null
               }
@@ -764,7 +764,7 @@ export default function Dashboard() {
               embedded
               hideTitle
               dailyBuckets={stats.dailyBuckets}
-              quotaTimeSeries={quota?.timeSeries ?? []}
+              quotaTimeSeries={postResetTimeSeries}
               chatEntitlement={quota?.chatEntitlement ?? null}
               completionsEntitlement={quota?.completionsEntitlement ?? null}
               premiumEntitlement={quota?.premiumEntitlement ?? null}

@@ -48,8 +48,8 @@ interface Props {
   proxyTokenAccuracy?: {
     cliRequests: number;
     vscodeRequests: number;
-    exactTotalTokens: number;
-    estimatedTotalTokens: number;
+    exactTotalTokens: number | null;
+    estimatedTotalTokens: number | null;
     totalRequests: number;
   } | null;
 }
@@ -679,7 +679,7 @@ export default function RoiExplorationPanel({
       ? quotaTimeSeries[quotaTimeSeries.length - 1].premiumUsed
       : null;
   const cycleTurnsPerPremium =
-    latestBilledPremium !== null && latestBilledPremium > 0
+    latestBilledPremium !== null && latestBilledPremium > 0 && cycleAssistantTurns > 0
       ? cycleAssistantTurns / latestBilledPremium
       : null;
 
@@ -806,7 +806,10 @@ export default function RoiExplorationPanel({
             <Metric
               label={`CLI vs VS Code Usage${selectedWorkspace ? " (account-wide)" : ""}`}
               value={`${proxyTokenAccuracy.cliRequests >= 1000 ? (proxyTokenAccuracy.cliRequests / 1000).toFixed(1) + "k" : proxyTokenAccuracy.cliRequests} CLI · ${proxyTokenAccuracy.vscodeRequests >= 1000 ? (proxyTokenAccuracy.vscodeRequests / 1000).toFixed(1) + "k" : proxyTokenAccuracy.vscodeRequests} VSC`}
-              sub={`CLI: ${(proxyTokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k · VSC: ~${(proxyTokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k est.`}
+              sub={proxyTokenAccuracy.exactTotalTokens !== null && proxyTokenAccuracy.estimatedTotalTokens !== null
+                ? `CLI: ${(proxyTokenAccuracy.exactTotalTokens / 1000).toFixed(0)}k · VSC: ~${(proxyTokenAccuracy.estimatedTotalTokens / 1000).toFixed(0)}k est.`
+                : "token accuracy available after first cycle requests"
+              }
               color="green"
             />
           )}

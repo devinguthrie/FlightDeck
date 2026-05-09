@@ -20,12 +20,12 @@ describe("ToolBreakdown pagination", () => {
   it("paginates the skill impact table", () => {
     render(<ToolBreakdown topTools={[]} skillStats={skillStats} totalRated={5} />);
 
-    expect(screen.getByText("skill-1")).toBeInTheDocument();
-    expect(screen.queryByText("skill-10")).not.toBeInTheDocument();
+    expect(screen.getByText("skill-10")).toBeInTheDocument();
+    expect(screen.queryByText("skill-1")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
-    expect(screen.getByText("skill-10")).toBeInTheDocument();
-    expect(screen.queryByText("skill-1")).not.toBeInTheDocument();
+    expect(screen.getByText("skill-1")).toBeInTheDocument();
+    expect(screen.queryByText("skill-10")).not.toBeInTheDocument();
   });
 });

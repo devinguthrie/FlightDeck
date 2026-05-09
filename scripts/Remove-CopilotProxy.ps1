@@ -29,6 +29,13 @@ function Confirm-Step([string]$Message) {
 $removed = @()
 $skipped = @()
 
+# --- 0. Stop the running proxy first (avoids leaving a running proxy with no cert) ---
+$StopScript = Join-Path $PSScriptRoot "Stop-CopilotProxy.ps1"
+if (Test-Path $StopScript) {
+    & $StopScript
+    Write-Host ""
+}
+
 # --- 1. Remove CA cert from certificate store ---
 $certs = Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue |
     Where-Object { $_.Subject -like "*mitmproxy*" }

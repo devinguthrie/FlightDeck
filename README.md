@@ -158,16 +158,20 @@ The MITM proxy intercepts Copilot CLI API traffic for exact token counts and lat
 
 ```powershell
 pip install mitmproxy
-mitmdump --listen-port 8877   # run once to generate CA keys, then Ctrl+C
-# Trust %USERPROFILE%\.mitmproxy\mitmproxy-ca-cert.p12
-# in Windows: Trusted Root Certification Authorities
+.\scripts\Install-CopilotProxyCert.ps1   # generates CA cert + trusts it automatically
 ```
 
 **Start / stop:**
 
 ```powershell
-.\scripts\Start-CopilotProxy.ps1   # starts mitmdump + sets HTTPS_PROXY user env var
-.\scripts\Remove-CopilotProxy.ps1  # stops proxy + clears env var
+.\scripts\Start-CopilotProxy.ps1          # starts mitmdump, installs cert if needed, sets HTTPS_PROXY
+.\scripts\Stop-CopilotProxy.ps1           # stops proxy + clears HTTPS_PROXY
+
+```
+
+**One-time Removal:**
+```powershell
+.\scripts\Remove-CopilotProxy.ps1         # full uninstall: stops proxy, removes cert, keys, and captured data
 ```
 
 See [docs/PROXY_SETUP.md](docs/PROXY_SETUP.md) for full setup, troubleshooting, and uninstall instructions.

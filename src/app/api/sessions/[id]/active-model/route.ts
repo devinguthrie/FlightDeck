@@ -114,10 +114,11 @@ export async function GET(
           .prepare("SELECT active_model, used_models FROM sessions WHERE session_id = ?")
           .get(sessionId) as { active_model: string | null; used_models: string } | undefined;
 
+        const rereadUsedModels = JSON.parse(updated?.used_models || "[]") as string[];
         return NextResponse.json({
           sessionId,
           activeModel: updated?.active_model ?? fallbackModelInfo.activeModel,
-          usedModels: JSON.parse(updated?.used_models ?? "[]") as string[],
+          usedModels: rereadUsedModels.length > 0 ? rereadUsedModels : fallbackModelInfo.usedModels,
         });
       }
     }

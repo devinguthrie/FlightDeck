@@ -38,6 +38,10 @@ vi.mock("@/components/ModelLimitsPanel", () => ({
   ModelLimitsPanel: () => <div>ModelLimitsPanel</div>,
 }));
 
+vi.mock("@/lib/useTheme", () => ({
+  useTheme: () => ["light", vi.fn()] as const,
+}));
+
 import Dashboard from "@/app/page";
 
 const STATS_RESPONSE = {
@@ -188,17 +192,14 @@ describe("Dashboard page", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps KPI collapse at the section level and collapses individual modules below it", async () => {
+  it("renders collapsible module buttons and collapses individual modules", async () => {
     render(<Dashboard />);
 
-    expect(await screen.findByRole("button", { name: "Collapse KPIs" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Collapse Premium Usage Projection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Sessions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Collapse KPIs" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Collapse Diagnostics" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Collapse Evidence" })).not.toBeInTheDocument();
-    expect(screen.getByText("Current billing-cycle health, immediate risk, and the quickest quality signals.")).toBeInTheDocument();
-    expect(screen.getByText("CLI vs VS Code Usage")).toBeInTheDocument();
-    expect(screen.getByText("Output / Input Ratio (CLI)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Collapse Premium Usage Projection" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Collapse Sessions" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse Premium Usage Projection" }));
 
@@ -370,15 +371,16 @@ describe("Dashboard page", () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText("tool-1")).toBeInTheDocument();
-    expect(screen.getByText("tool-10")).toBeInTheDocument();
-    expect(screen.queryByText("tool-11")).not.toBeInTheDocument();
+    // Default sort is count desc — tool-12 (count=12) first, tool-1 (count=1) last
+    expect(await screen.findByText("tool-12")).toBeInTheDocument();
+    expect(screen.getByText("tool-3")).toBeInTheDocument();
+    expect(screen.queryByText("tool-1")).not.toBeInTheDocument();
     expect(screen.getByText(/page 1 of 2/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
-    expect(await screen.findByText("tool-11")).toBeInTheDocument();
-    expect(screen.getByText("tool-12")).toBeInTheDocument();
-    expect(screen.queryByText("tool-1")).not.toBeInTheDocument();
+    expect(await screen.findByText("tool-1")).toBeInTheDocument();
+    expect(screen.getByText("tool-2")).toBeInTheDocument();
+    expect(screen.queryByText("tool-12")).not.toBeInTheDocument();
   });
 });

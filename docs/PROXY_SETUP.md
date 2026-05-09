@@ -32,20 +32,15 @@ pip install mitmproxy
 
 ### 2. Trust the mitmproxy CA certificate
 
-Run `mitmdump` once briefly to generate keys:
+Run the install script — it generates the CA cert if needed and imports it into your user's Trusted Root store automatically:
 
 ```powershell
-mitmdump --listen-port 8877
-# Ctrl+C after a second
+.\scripts\Install-CopilotProxyCert.ps1
 ```
 
-Then trust the CA so TLS interception works:
+The script is idempotent: safe to run again if you ever need to re-trust after uninstalling. You only need to do this once per machine.
 
-- Open `%USERPROFILE%\.mitmproxy\`
-- Double-click `mitmproxy-ca-cert.p12` → install to **Trusted Root Certification Authorities** (Local Machine or Current User)
-- Or visit `http://mitm.it` in a browser while the proxy is running and follow the instructions for your OS
-
-You only need to do this once per machine.
+> **Note:** `Start-CopilotProxy.ps1` calls this automatically on every launch, so you only need to run it manually if the cert gets removed.
 
 ---
 
@@ -64,9 +59,10 @@ The script starts `mitmdump` as a background process and sets `HTTPS_PROXY` at t
 To stop the proxy when you're done:
 
 ```powershell
-Stop-Process -Id $FLIGHTDECK_PROXY_PID
-$env:HTTPS_PROXY = ''
+.\scripts\Stop-CopilotProxy.ps1
 ```
+
+This kills the proxy process, clears `HTTPS_PROXY` from both the current session and the Windows User environment scope, and removes the lockfile.
 
 ---
 
@@ -108,25 +104,23 @@ FlightDeck uses this data to show:
 | Symptom | Fix |
 |---|---|
 | `mitmdump not found` | `pip install mitmproxy` or add Python Scripts to PATH |
-| TLS handshake errors | Re-trust the CA cert (step 2 above) |
-| No records appearing | Make sure `gh copilot` is run from the same terminal as the proxy script |
-| VS Code traffic not captured | Start VS Code from the proxy terminal, or set `HTTPS_PROXY` as a system env var |
+| TLS handshake / certificate errors | Re-run `.\scripts\Install-CopilotProxyCert.ps1` |
+| No records appearing | Open a **new** terminal after starting the proxy so `HTTPS_PROXY` is inherited |
+| VS Code traffic not captured | Restart VS Code after starting the proxy (it inherits the User-scope `HTTPS_PROXY` on restart) |
 | File not created | Check `%USERPROFILE%\.ai-usage\` exists; the script creates it automatically |
+| `Stop-CopilotProxy.ps1` says "not running" but proxy is still up | Port 8877 is owned by a `python3.x` process from a previous hard-kill; the script now detects this automatically via port scan fallback |
 
 ---
 
 ## Stopping the proxy
 
-The PID is stored in `$FLIGHTDECK_PROXY_PID` when the script runs:
-
 ```powershell
-Stop-Process -Id $FLIGHTDECK_PROXY_PID
-$env:HTTPS_PROXY = ''
+.\scripts\Stop-CopilotProxy.ps1
 ```
 
-Or to stop all mitmdump instances: `Get-Process mitmdump | Stop-Process`
+The script reads the PID from `~/.ai-usage/proxy.pid` and stops the tracked process. If no lockfile exists, it falls back to killing whatever process owns port 8877. `HTTPS_PROXY` is cleared from both the current session and the Windows User environment scope.
 
-The `HTTPS_PROXY` env var is shell-session-scoped and disappears when you close the terminal.
+> **Windows note:** mitmdump runs under `python3.x` on Windows (not as a `mitmdump` process). The script handles this automatically.
 
 ---
 
@@ -138,7 +132,7 @@ To remove everything the proxy setup touched, run:
 .\scripts\Remove-CopilotProxy.ps1
 ```
 
-This will prompt before each step and remove:
+This automatically stops any running proxy first (via `Stop-CopilotProxy.ps1`), then prompts before each step and removes:
 
 | What | Where |
 |---|---|

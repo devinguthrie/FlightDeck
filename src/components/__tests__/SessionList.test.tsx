@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import SessionList from "@/components/SessionList";
 
-const sessions = Array.from({ length: 30 }, (_, index) => ({
+const sessions = Array.from({ length: 6 }, (_, index) => ({
   sessionId: `session-${index + 1}`,
   workspaceName: `workspace-${index + 1}`,
   startedAt: "2026-04-21T10:00:00.000Z",
@@ -27,11 +27,11 @@ describe("SessionList pagination", () => {
     render(<SessionList sessions={sessions} onRated={() => {}} />);
 
     expect(screen.getByText("workspace-1")).toBeInTheDocument();
-    expect(screen.queryByText("workspace-30")).not.toBeInTheDocument();
+    expect(screen.queryByText("workspace-6")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
-    expect(screen.getByText("workspace-30")).toBeInTheDocument();
+    expect(screen.getByText("workspace-6")).toBeInTheDocument();
     expect(screen.queryByText("workspace-1")).not.toBeInTheDocument();
   });
 });

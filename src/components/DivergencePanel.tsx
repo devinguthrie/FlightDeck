@@ -248,7 +248,7 @@ export default function DivergencePanel({
   hideTitle = false,
   embedded = false,
 }: Props) {
-  const [trendWindow, setTrendWindow] = useState<TimeWindow>("7d");
+  const [trendWindow, setTrendWindow] = useState<TimeWindow>("24h");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
